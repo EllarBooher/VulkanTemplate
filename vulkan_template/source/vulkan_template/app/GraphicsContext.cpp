@@ -1,6 +1,6 @@
 #include "GraphicsContext.hpp"
 
-#include "vulkan_template/app_resources/PlatformWindow.hpp"
+#include "vulkan_template/app/PlatformWindow.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include <GLFW/glfw3.h>

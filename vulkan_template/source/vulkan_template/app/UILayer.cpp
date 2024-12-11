@@ -1,7 +1,7 @@
 #include "UILayer.hpp"
 
-#include "vulkan_template/app_resources/PlatformWindow.hpp"
-#include "vulkan_template/app_resources/SceneTexture.hpp"
+#include "vulkan_template/app/PlatformWindow.hpp"
+#include "vulkan_template/app/SceneTexture.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/core/UIRectangle.hpp"
 #include "vulkan_template/core/UIWindowScope.hpp"

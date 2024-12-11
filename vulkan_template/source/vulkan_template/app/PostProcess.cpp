@@ -1,6 +1,6 @@
 #include "PostProcess.hpp"
 
-#include "vulkan_template/app_resources/DescriptorAllocator.hpp"
+#include "vulkan_template/app/DescriptorAllocator.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/Shader.hpp"
 #include <glm/vec2.hpp>

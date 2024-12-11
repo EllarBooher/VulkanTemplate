@@ -1,7 +1,7 @@
 #include "FrameBuffer.hpp"
 
-#include "vulkan_template/app_resources/SceneTexture.hpp"
-#include "vulkan_template/app_resources/Swapchain.hpp"
+#include "vulkan_template/app/SceneTexture.hpp"
+#include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"

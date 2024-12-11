@@ -1,13 +1,13 @@
 #include "vulkan_template/VulkanTemplate.hpp"
 
-#include "vulkan_template/app_resources/DescriptorAllocator.hpp"
-#include "vulkan_template/app_resources/FrameBuffer.hpp"
-#include "vulkan_template/app_resources/GraphicsContext.hpp"
-#include "vulkan_template/app_resources/PlatformWindow.hpp"
-#include "vulkan_template/app_resources/PostProcess.hpp"
-#include "vulkan_template/app_resources/Renderer.hpp"
-#include "vulkan_template/app_resources/Swapchain.hpp"
-#include "vulkan_template/app_resources/UILayer.hpp"
+#include "vulkan_template/app/DescriptorAllocator.hpp"
+#include "vulkan_template/app/FrameBuffer.hpp"
+#include "vulkan_template/app/GraphicsContext.hpp"
+#include "vulkan_template/app/PlatformWindow.hpp"
+#include "vulkan_template/app/PostProcess.hpp"
+#include "vulkan_template/app/Renderer.hpp"
+#include "vulkan_template/app/Swapchain.hpp"
+#include "vulkan_template/app/UILayer.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include <GLFW/glfw3.h>
 #include <chrono>

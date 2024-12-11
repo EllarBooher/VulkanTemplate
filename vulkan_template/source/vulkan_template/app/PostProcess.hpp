@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vulkan_template/app_resources/SceneTexture.hpp"
+#include "vulkan_template/app/SceneTexture.hpp"
 #include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 
