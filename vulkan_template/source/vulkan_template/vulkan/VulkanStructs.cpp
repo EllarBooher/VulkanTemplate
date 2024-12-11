@@ -1,4 +1,4 @@
-#include "vulkanstructs.hpp"
+#include "VulkanStructs.hpp"
 
 namespace vkt
 {

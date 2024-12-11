@@ -8,7 +8,7 @@
 #include "vulkan_template/app_resources/Renderer.hpp"
 #include "vulkan_template/app_resources/Swapchain.hpp"
 #include "vulkan_template/app_resources/UILayer.hpp"
-#include "vulkan_template/core/log.hpp"
+#include "vulkan_template/core/Log.hpp"
 #include <GLFW/glfw3.h>
 #include <chrono>
 

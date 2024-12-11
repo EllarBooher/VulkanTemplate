@@ -1,4 +1,4 @@
-#include "imageoperations.hpp"
+#include "ImageOperations.hpp"
 
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"

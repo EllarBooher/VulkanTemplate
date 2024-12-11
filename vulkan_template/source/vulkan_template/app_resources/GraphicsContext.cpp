@@ -1,7 +1,7 @@
-#include "graphicscontext.hpp"
+#include "GraphicsContext.hpp"
 
 #include "vulkan_template/app_resources/PlatformWindow.hpp"
-#include "vulkan_template/core/log.hpp"
+#include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include <GLFW/glfw3.h>
 #include <VkBootstrap.h>
