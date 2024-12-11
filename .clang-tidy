@@ -1,0 +1,58 @@
+﻿#
+# Justification for removals:
+#
+# llvm-header-guard
+# #pragma once works well enough since headers are unique
+#
+# misc-include-cleaner
+# IWYU is set up for the project, so this is redundant.
+#
+# misc-misplaced-const
+# Too noisy, since Vulkan contains many typedef'd pointers i.e. VkDevice is VkDevice_T*
+#
+# readability-named-parameter
+# Not naming a parameter expresses that the type name is enough.
+#
+# readability-identifier-length
+# Does not seem to impact readability all that much.
+#
+# bugprone-unchecked-optional-access
+# Sometimes causes crashes and has false positives in clang-tidy verison 17
+#
+# bugprone-exception-escape
+# Fires false positives with clang-tidy version 17, on structs with certain types.
+# Seems to be an issue with std::string or std::variant on Windows, but I have not investigated deeply
+#
+# misc-no-recursion
+# Recursion is useful and it is too much to work around right now.
+#
+# modernize-use-emplace
+# This check is nice, but does not seem to consider designated aggregate initialization, so it produces a lot of noise.
+#
+
+FormatStyle:        file
+HeaderFileExtensions:         ['', 'h','hh','hpp','hxx']
+HeaderFilterRegex: '.*\\vulkan_template\\(include|source)\\*'
+ImplementationFileExtensions: ['c','cc','cpp','cxx']
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-unchecked-optional-access,
+  -bugprone-exception-escape,
+  clang-analyzer-*,
+  llvm-*,
+  -llvm-header-guard,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-misplaced-const,
+  -misc-no-recursion,
+  modernize-*,
+  -modernize-use-emplace,
+  performance-*,
+  readability*,
+  -readability-named-parameter,
+  -readability-identifier-length,
+
+CheckOptions:
+	misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic: true
+WarningsAsErrors: '*'

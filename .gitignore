@@ -1,0 +1,17 @@
+# Visual Studio
+
+.vs/
+
+# Log Files
+
+**/*.log
+
+# CMake build folder
+
+build/
+
+# Local build configurations
+
+CMakeUserPresets.json
+
+imgui.ini

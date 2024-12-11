@@ -1,0 +1,9 @@
+[
+  { "symbol": [ "size_t", "private", "\"vulkan_template/core/Integer.hpp\"", "public" ] },
+  { "symbol": [ "uint8_t", "private", "\"vulkan_template/core/Integer.hpp\"", "public" ] },
+  { "symbol": [ "uint16_t", "private", "\"vulkan_template/core/Integer.hpp\"", "public" ] },
+  { "symbol": [ "uint32_t", "private", "\"vulkan_template/core/Integer.hpp\"", "public" ] },
+  { "symbol": [ "uint64_t", "private", "\"vulkan_template/core/Integer.hpp\"", "public" ] },
+  { "symbol": [ "int32_t", "private", "\"vulkan_template/core/Integer.hpp\"", "public" ] },
+  { "symbol": [ "uintptr_t", "private", "\"vulkan_template/core/Integer.hpp\"", "public" ] }
+]

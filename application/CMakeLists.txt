@@ -1,0 +1,2 @@
+add_executable(VulkanTemplateApp main.cpp)
+target_link_libraries(VulkanTemplateApp PRIVATE vulkan_template_lib)

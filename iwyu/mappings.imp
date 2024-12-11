@@ -1,0 +1,8 @@
+[
+  { "ref": "glm.imp" },
+  { "ref": "std.imp" },
+  { "ref": "vulkan.imp" },
+  { "ref": "integers.imp" },
+
+  { "symbol": [ "fastgltf::ElementTraits<glm::vec2>", "private", "<fastgltf/glm_element_traits.hpp>", "public" ] }
+]
