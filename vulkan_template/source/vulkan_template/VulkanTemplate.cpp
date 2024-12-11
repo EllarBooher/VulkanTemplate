@@ -22,6 +22,7 @@ struct Resources
     vkt::FrameBuffer frameBuffer;
     vkt::UILayer uiLayer;
     vkt::Renderer renderer;
+    vkt::PostProcess postProcess;
 };
 
 auto initialize() -> std::optional<Resources>
@@ -110,6 +111,17 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
+    VKT_INFO("Creating Post Processor...");
+
+    std::optional<vkt::PostProcess> postProcessResult{
+        vkt::PostProcess::create(graphicsContext.device())
+    };
+    if (!postProcessResult.has_value())
+    {
+        VKT_ERROR("Failed to create post process instance.");
+        return std::nullopt;
+    }
+
     VKT_INFO("Successfully initialized Editor resources.");
 
     return Resources{
@@ -119,6 +131,7 @@ auto initialize() -> std::optional<Resources>
         .frameBuffer = std::move(frameBufferResult).value(),
         .uiLayer = std::move(uiLayerResult).value(),
         .renderer = std::move(rendererResult).value(),
+        .postProcess = std::move(postProcessResult).value(),
     };
 }
 
@@ -141,9 +154,8 @@ auto mainLoop() -> vkt::RunResult
     vkt::FrameBuffer& frameBuffer{resourcesResult.value().frameBuffer};
     vkt::UILayer& uiLayer{resourcesResult.value().uiLayer};
     vkt::Renderer& renderer{resourcesResult.value().renderer};
+    vkt::PostProcess& postProcess{resourcesResult.value().postProcess};
 
-    auto postProcessResult{vkt::PostProcess::create(graphicsContext.device())};
-    vkt::PostProcess& postProcess{postProcessResult.value()};
     bool nonlinearEncodingEnabled{true};
 
     glfwShowWindow(mainWindow.handle());
