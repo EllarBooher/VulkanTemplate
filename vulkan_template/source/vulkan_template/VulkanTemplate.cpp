@@ -4,6 +4,7 @@
 #include "vulkan_template/app_resources/FrameBuffer.hpp"
 #include "vulkan_template/app_resources/GraphicsContext.hpp"
 #include "vulkan_template/app_resources/PlatformWindow.hpp"
+#include "vulkan_template/app_resources/PostProcess.hpp"
 #include "vulkan_template/app_resources/Renderer.hpp"
 #include "vulkan_template/app_resources/Swapchain.hpp"
 #include "vulkan_template/app_resources/UILayer.hpp"
@@ -141,6 +142,10 @@ auto mainLoop() -> vkt::RunResult
     vkt::UILayer& uiLayer{resourcesResult.value().uiLayer};
     vkt::Renderer& renderer{resourcesResult.value().renderer};
 
+    auto postProcessResult{vkt::PostProcess::create(graphicsContext.device())};
+    vkt::PostProcess& postProcess{postProcessResult.value()};
+    bool nonlinearEncodingEnabled{true};
+
     glfwShowWindow(mainWindow.handle());
 
     while (glfwWindowShouldClose(mainWindow.handle()) == GLFW_FALSE)
@@ -165,6 +170,12 @@ auto mainLoop() -> vkt::RunResult
         {
             vkt::DockingLayout const& dockingLayout{uiLayer.begin()};
 
+            uiLayer.HUDMenuToggle(
+                "Display",
+                "Nonlinear Encoding Post-Process",
+                nonlinearEncodingEnabled
+            );
+
             std::optional<vkt::SceneViewport> sceneViewport{
                 uiLayer.sceneViewport()
             };
@@ -187,6 +198,11 @@ auto mainLoop() -> vkt::RunResult
             // handling on frame resources like the open command buffer
             VKT_ERROR("UI Layer did not have output image.");
             return vkt::RunResult::FAILURE;
+        }
+
+        if (nonlinearEncodingEnabled)
+        {
+            postProcess.recordLinearToSRGB(cmd, uiOutput.value());
         }
 
         if (VkResult const endFrameResult{frameBuffer.finishFrameWithPresent(

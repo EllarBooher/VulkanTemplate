@@ -652,6 +652,31 @@ auto UILayer::HUDMenuItem(std::string const& menu, std::string const& item)
     return clicked;
 }
 
+void UILayer::HUDMenuToggle(
+    std::string const& menu, std::string const& item, bool& value
+) const
+{
+    if (!m_open)
+    {
+        VKT_WARNING("UILayer method called while UI frame is not open.");
+        return;
+    }
+
+    ImGui::Begin("BackgroundWindow");
+
+    if (ImGui::BeginMenuBar())
+    {
+        if (ImGui::BeginMenu(menu.c_str()))
+        {
+            ImGui::MenuItem(item.c_str(), nullptr, &value);
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+
+    ImGui::End();
+}
+
 auto UILayer::sceneTextureLayout() const -> std::optional<VkDescriptorSetLayout>
 {
     if (m_sceneTexture == nullptr)

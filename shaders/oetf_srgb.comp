@@ -6,6 +6,11 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba16f, set = 0, binding = 0) uniform image2D image;
 
+layout(push_constant) uniform PushConstants
+{
+    vec2 drawOffset;
+} pc;
+
 vec3 to_nonlinear(const vec3 linear)
 {
     // Transfer implementation as defined in
@@ -21,7 +26,7 @@ vec3 to_nonlinear(const vec3 linear)
 void main()
 {
     vec2 size = imageSize(image);
-    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy) + ivec2(pc.drawOffset);
 
     if (texelCoord.x < size.x && texelCoord.y < size.y)
     {

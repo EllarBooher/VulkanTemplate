@@ -94,6 +94,9 @@ public:
 
     [[nodiscard]] auto
     HUDMenuItem(std::string const& menu, std::string const& item) const -> bool;
+    void HUDMenuToggle(
+        std::string const& menu, std::string const& item, bool& value
+    ) const;
 
     [[nodiscard]] auto sceneTextureLayout() const
         -> std::optional<VkDescriptorSetLayout>;

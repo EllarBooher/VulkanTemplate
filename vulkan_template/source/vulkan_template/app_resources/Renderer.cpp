@@ -1,136 +1,12 @@
 #include "Renderer.hpp"
 
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Shader.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include <filesystem>
 #include <fstream>
 #include <glm/vec2.hpp>
 #include <span>
-
-namespace detail
-{
-auto ensureAbsolutePath(
-    std::filesystem::path const& path,
-    std::filesystem::path const& root = std::filesystem::current_path()
-) -> std::filesystem::path
-{
-    if (path.is_absolute())
-    {
-        return path;
-    }
-
-    return root / path;
-}
-
-auto loadFileBytes(std::filesystem::path const& path) -> std::vector<uint8_t>
-{
-    std::filesystem::path const assetPath{ensureAbsolutePath(path)};
-    std::ifstream file(path, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open())
-    {
-        VKT_ERROR("Unable to open file at {}", path.string());
-        return {};
-    }
-
-    size_t const fileSizeBytes = static_cast<size_t>(file.tellg());
-    if (fileSizeBytes == 0)
-    {
-        VKT_ERROR("File at empty at {}", path.string());
-        return {};
-    }
-
-    std::vector<uint8_t> buffer(fileSizeBytes);
-
-    file.seekg(0, std::ios::beg);
-    file.read(
-        reinterpret_cast<char*>(buffer.data()),
-        static_cast<std::streamsize>(fileSizeBytes)
-    );
-
-    file.close();
-
-    return buffer;
-}
-
-template <typename T> struct ShaderResult
-{
-    T shader;
-    VkResult result;
-};
-
-auto loadShaderObject(
-    VkDevice const device,
-    std::filesystem::path const& path,
-    VkShaderStageFlagBits const stage,
-    VkShaderStageFlags const nextStage,
-    std::span<VkDescriptorSetLayout const> const layouts,
-    std::span<VkPushConstantRange const> const pushConstantRanges,
-    VkSpecializationInfo const specializationInfo
-) -> std::optional<VkShaderEXT>
-{
-    std::vector<uint8_t> const fileBytes{loadFileBytes(path)};
-    if (fileBytes.empty())
-    {
-        VKT_ERROR("Failed to load file for texture at '{}'", path.string());
-        return std::nullopt;
-    }
-
-    VkShaderCreateInfoEXT const createInfo{
-        .sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-        .pNext = nullptr,
-
-        .flags = 0,
-
-        .stage = stage,
-        .nextStage = nextStage,
-
-        .codeType = VkShaderCodeTypeEXT::VK_SHADER_CODE_TYPE_SPIRV_EXT,
-        .codeSize = fileBytes.size(),
-        .pCode = fileBytes.data(),
-
-        .pName = "main",
-
-        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts = layouts.data(),
-
-        .pushConstantRangeCount =
-            static_cast<uint32_t>(pushConstantRanges.size()),
-        .pPushConstantRanges = pushConstantRanges.data(),
-
-        .pSpecializationInfo = &specializationInfo,
-    };
-
-    VkShaderEXT shaderObject{VK_NULL_HANDLE};
-    VkResult const result{
-        vkCreateShadersEXT(device, 1, &createInfo, nullptr, &shaderObject)
-    };
-    if (result != VK_SUCCESS)
-    {
-        VKT_LOG_VK(result, "Failed to compile Shader Object");
-        return std::nullopt;
-    }
-
-    return shaderObject;
-}
-
-auto computeDispatchCount(uint32_t invocations, uint32_t workgroupSize)
-    -> uint32_t
-{
-    // When workgroups are larger than 1, but this value does not evenly divide
-    // the amount of work needed, we need to dispatch extra to cover this. It is
-    // up to the shader to discard these extra invocations.
-
-    uint32_t const count{invocations / workgroupSize};
-
-    if (invocations % workgroupSize == 0)
-    {
-        return count;
-    }
-
-    return count + 1;
-}
-} // namespace detail
 
 namespace vkt
 {
@@ -181,7 +57,7 @@ auto Renderer::create(VkDevice const device) -> std::optional<Renderer>
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, .offset = 0, .size = 16
     }};
 
-    std::optional<VkShaderEXT> const shaderResult{detail::loadShaderObject(
+    std::optional<VkShaderEXT> const shaderResult{vkt::loadShaderObject(
         device,
         shaderPath,
         VK_SHADER_STAGE_COMPUTE_BIT,
@@ -230,6 +106,8 @@ void Renderer::recordDraw(VkCommandBuffer const cmd, SceneTexture& destination)
     VkShaderEXT const shaderObject{m_shader};
     VkPipelineLayout const layout{m_shaderLayout};
 
+    destination.color().recordTransitionBarriered(cmd, VK_IMAGE_LAYOUT_GENERAL);
+
     vkCmdBindShadersEXT(cmd, 1, &stage, &shaderObject);
 
     // Bind the destination image for rendering during compute
@@ -265,11 +143,10 @@ void Renderer::recordDraw(VkCommandBuffer const cmd, SceneTexture& destination)
 
     uint32_t constexpr WORKGROUP_SIZE{16};
 
-    vkCmdDispatch(
+    vkt::computeDispatch(
         cmd,
-        detail::computeDispatchCount(drawRect.extent.width, WORKGROUP_SIZE),
-        detail::computeDispatchCount(drawRect.extent.height, WORKGROUP_SIZE),
-        1
+        VkExtent3D{drawRect.extent.width, drawRect.extent.height, 1},
+        WORKGROUP_SIZE
     );
 }
 } // namespace vkt

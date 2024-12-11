@@ -18,11 +18,12 @@ add_library(
 	"source/vulkan_template/app_resources/Image.cpp" 
 	"source/vulkan_template/app_resources/ImageView.cpp" 
 	"source/vulkan_template/app_resources/Renderer.cpp"
+	"source/vulkan_template/app_resources/PostProcess.cpp" 
 
 	"source/vulkan_template/vulkan/ImageOperations.cpp"
 	"source/vulkan_template/vulkan/VulkanUsage.cpp" 
 	"source/vulkan_template/vulkan/VulkanStructs.cpp"
-
+	"source/vulkan_template/vulkan/Shader.cpp"
 )
 
 add_dependencies(vulkan_template_lib shaders)
