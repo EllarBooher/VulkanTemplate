@@ -15,11 +15,11 @@ add_library(
 	"source/vulkan_template/app_resources/UILayer.cpp" 
 	"source/vulkan_template/app_resources/PlatformWindow.cpp"
 	"source/vulkan_template/app_resources/SceneTexture.cpp" 
-	"source/vulkan_template/app_resources/Image.cpp" 
-	"source/vulkan_template/app_resources/ImageView.cpp" 
 	"source/vulkan_template/app_resources/Renderer.cpp"
 	"source/vulkan_template/app_resources/PostProcess.cpp" 
 
+	"source/vulkan_template/vulkan/Image.cpp" 
+	"source/vulkan_template/vulkan/ImageView.cpp" 
 	"source/vulkan_template/vulkan/ImageOperations.cpp"
 	"source/vulkan_template/vulkan/VulkanUsage.cpp" 
 	"source/vulkan_template/vulkan/VulkanStructs.cpp"

@@ -1,7 +1,7 @@
-#include "imageview.hpp"
+#include "ImageView.hpp"
 
-#include "vulkan_template/app_resources/Image.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Image.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include <spdlog/fmt/bundled/core.h>
 #include <spdlog/fmt/bundled/format.h>

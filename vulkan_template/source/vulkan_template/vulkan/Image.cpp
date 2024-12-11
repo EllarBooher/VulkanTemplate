@@ -1,4 +1,4 @@
-#include "image.hpp"
+#include "Image.hpp"
 
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"

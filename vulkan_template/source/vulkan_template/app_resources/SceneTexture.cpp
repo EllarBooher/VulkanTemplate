@@ -1,9 +1,8 @@
 #include "SceneTexture.hpp"
 
 #include "vulkan_template/app_resources/DescriptorAllocator.hpp"
-#include "vulkan_template/app_resources/Image.hpp"
-#include "vulkan_template/app_resources/ImageView.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Image.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <array>
