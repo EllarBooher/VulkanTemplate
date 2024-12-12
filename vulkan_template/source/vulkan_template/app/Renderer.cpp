@@ -1,12 +1,16 @@
 #include "Renderer.hpp"
 
+#include "vulkan_template/app/SceneTexture.hpp"
+#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/Shader.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include <filesystem>
-#include <fstream>
 #include <glm/vec2.hpp>
 #include <span>
+#include <utility>
+#include <vector>
 
 namespace vkt
 {

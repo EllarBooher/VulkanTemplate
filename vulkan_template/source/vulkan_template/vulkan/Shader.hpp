@@ -1,7 +1,9 @@
 #pragma once
 
+#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <filesystem>
+#include <optional>
 #include <span>
 
 namespace vkt

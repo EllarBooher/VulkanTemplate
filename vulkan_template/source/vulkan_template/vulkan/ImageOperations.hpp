@@ -1,7 +1,6 @@
 #pragma once
 
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
-#include <glm/vec2.hpp>
 #include <optional>
 
 namespace vkt

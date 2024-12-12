@@ -2,10 +2,9 @@
 
 #include "vulkan_template/app/DescriptorAllocator.hpp"
 #include "vulkan_template/core/Integer.hpp"
-#include "vulkan_template/vulkan/VulkanMacros.hpp"
+#include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <memory>
 #include <optional>
-#include <vk_mem_alloc.h>
 
 namespace vkt
 {

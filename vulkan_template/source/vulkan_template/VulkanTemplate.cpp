@@ -1,6 +1,5 @@
 #include "vulkan_template/VulkanTemplate.hpp"
 
-#include "vulkan_template/app/DescriptorAllocator.hpp"
 #include "vulkan_template/app/FrameBuffer.hpp"
 #include "vulkan_template/app/GraphicsContext.hpp"
 #include "vulkan_template/app/PlatformWindow.hpp"
@@ -9,8 +8,20 @@
 #include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/app/UILayer.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/VulkanMacros.hpp"
+#include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <GLFW/glfw3.h>
 #include <chrono>
+#include <functional>
+#include <glm/vec2.hpp>
+#include <optional>
+#include <thread>
+#include <utility>
+
+namespace vkt
+{
+struct SceneTexture;
+} // namespace vkt
 
 namespace detail
 {

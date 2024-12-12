@@ -2,6 +2,8 @@
 
 #include <memory>
 
+// IWYU pragma: no_include <spdlog/common.h>
+
 #ifndef SPDLOG_ACTIVE_LEVEL
 #ifdef VKT_DEBUG_BUILD
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG

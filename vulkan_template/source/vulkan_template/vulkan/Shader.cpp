@@ -3,6 +3,8 @@
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include <fstream>
+#include <string>
+#include <vector>
 
 namespace detail
 {

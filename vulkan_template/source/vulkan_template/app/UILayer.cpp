@@ -13,6 +13,7 @@
 #include <glm/common.hpp>
 #include <glm/exponential.hpp>
 #include <glm/ext/vector_relational.hpp>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "vulkan_template/core/Integer.hpp"
-#include "vulkan_template/vulkan/VulkanMacros.hpp"
+#include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <optional>
 #include <span>
 #include <vector>

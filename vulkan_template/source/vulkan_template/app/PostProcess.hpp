@@ -1,8 +1,12 @@
 #pragma once
 
-#include "vulkan_template/app/SceneTexture.hpp"
-#include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
+#include <optional>
+
+namespace vkt
+{
+struct SceneTexture;
+} // namespace vkt
 
 namespace vkt
 {

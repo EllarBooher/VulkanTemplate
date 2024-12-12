@@ -1,14 +1,11 @@
 #include "Swapchain.hpp"
 
-#include "vulkan_template/app/DescriptorAllocator.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <algorithm>
-#include <filesystem>
 #include <optional>
-#include <tuple>
 #include <utility>
 
 namespace vkt

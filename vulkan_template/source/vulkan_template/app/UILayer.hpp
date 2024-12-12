@@ -2,14 +2,12 @@
 
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/UIRectangle.hpp"
-#include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <functional>
 #include <imgui.h>
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace vkt
 {

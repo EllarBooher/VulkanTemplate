@@ -3,11 +3,15 @@
 #include "vulkan_template/app/SceneTexture.hpp"
 #include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Image.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"
+#include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <deque>
 #include <functional>
+#include <limits>
+#include <span>
 #include <utility>
 
 namespace
