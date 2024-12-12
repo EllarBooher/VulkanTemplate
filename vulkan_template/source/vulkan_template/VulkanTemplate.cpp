@@ -24,16 +24,21 @@ struct Resources
     vkt::Renderer renderer;
     vkt::PostProcess postProcess;
 };
+struct Config
+{
+    // As a post process step, encode main render target to sRGB
+    bool postProcessLinearToSRGB{true};
+};
 
 auto initialize() -> std::optional<Resources>
 {
+    VkExtent2D constexpr TEXTURE_MAX{4096, 4096};
+
     VKT_INFO("Initializing Editor resources...");
 
     VKT_INFO("Creating window...");
 
     glm::u16vec2 constexpr DEFAULT_WINDOW_EXTENT{1920, 1080};
-    VkExtent2D constexpr TEXTURE_MAX{4096, 4096};
-
     std::optional<vkt::PlatformWindow> windowResult{
         vkt::PlatformWindow::create(DEFAULT_WINDOW_EXTENT)
     };
@@ -135,9 +140,94 @@ auto initialize() -> std::optional<Resources>
     };
 }
 
-void render(VkCommandBuffer const cmd, vkt::SceneTexture& sceneTexture) {}
+enum class LoopResult
+{
+    CONTINUE,
+    FATAL_ERROR
+};
 
-auto mainLoop() -> vkt::RunResult
+auto mainLoop(Resources& resources, Config& config) -> LoopResult
+{
+    vkt::GraphicsContext& graphicsContext{resources.graphics};
+    vkt::Swapchain& swapchain{resources.swapchain};
+    vkt::FrameBuffer& frameBuffer{resources.frameBuffer};
+    vkt::UILayer& uiLayer{resources.uiLayer};
+    vkt::Renderer const& renderer{resources.renderer};
+    vkt::PostProcess& postProcess{resources.postProcess};
+
+    if (VkResult const beginFrameResult{frameBuffer.beginNewFrame()};
+        beginFrameResult != VK_SUCCESS)
+    {
+        VKT_LOG_VK(beginFrameResult, "Failed to begin frame.");
+        return LoopResult::FATAL_ERROR;
+    }
+    VkCommandBuffer const cmd{frameBuffer.currentFrame().mainCommandBuffer};
+
+    {
+        vkt::DockingLayout const& dockingLayout{uiLayer.begin()};
+
+        uiLayer.HUDMenuToggle(
+            "Display",
+            "Post-Process Linear to sRGB",
+            config.postProcessLinearToSRGB
+        );
+
+        std::optional<vkt::SceneViewport> sceneViewport{uiLayer.sceneViewport()
+        };
+
+        if (sceneViewport.has_value())
+        {
+            renderer.recordDraw(cmd, sceneViewport.value().texture);
+        }
+
+        uiLayer.end();
+    }
+
+    std::optional<std::reference_wrapper<vkt::SceneTexture>> uiOutput{
+        uiLayer.recordDraw(cmd)
+    };
+
+    if (!uiOutput.has_value())
+    {
+        // TODO: make this not a fatal error, but that requires better
+        // handling on frame resources like the open command buffer
+        VKT_ERROR("UI Layer did not have output image.");
+        return LoopResult::FATAL_ERROR;
+    }
+
+    if (config.postProcessLinearToSRGB)
+    {
+        postProcess.recordLinearToSRGB(cmd, uiOutput.value());
+    }
+
+    if (VkResult const endFrameResult{frameBuffer.finishFrameWithPresent(
+            swapchain, graphicsContext.universalQueue(), uiOutput.value()
+        )};
+        endFrameResult != VK_SUCCESS)
+    {
+        if (endFrameResult != VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            VKT_LOG_VK(
+                endFrameResult,
+                "Failed to end frame, due to non-out-of-date error."
+            );
+            return LoopResult::FATAL_ERROR;
+        }
+
+        if (VkResult const rebuildResult{swapchain.rebuild()};
+            rebuildResult != VK_SUCCESS)
+        {
+            VKT_LOG_VK(
+                rebuildResult, "Failed to rebuild swapchain for resizing."
+            );
+            return LoopResult::FATAL_ERROR;
+        }
+    }
+
+    return LoopResult::CONTINUE;
+}
+
+auto runApp() -> vkt::RunResult
 {
     // For usage of time suffixes i.e. 1ms
     using namespace std::chrono_literals;
@@ -148,103 +238,39 @@ auto mainLoop() -> vkt::RunResult
         VKT_ERROR("Failed to initialize application resources.");
         return vkt::RunResult::FAILURE;
     }
-    vkt::PlatformWindow const& mainWindow{resourcesResult.value().window};
-    vkt::GraphicsContext& graphicsContext{resourcesResult.value().graphics};
-    vkt::Swapchain& swapchain{resourcesResult.value().swapchain};
-    vkt::FrameBuffer& frameBuffer{resourcesResult.value().frameBuffer};
-    vkt::UILayer& uiLayer{resourcesResult.value().uiLayer};
-    vkt::Renderer& renderer{resourcesResult.value().renderer};
-    vkt::PostProcess& postProcess{resourcesResult.value().postProcess};
+    Resources& resources{resourcesResult.value()};
 
-    bool nonlinearEncodingEnabled{true};
+    Config config{};
 
-    glfwShowWindow(mainWindow.handle());
+    glfwShowWindow(resources.window.handle());
 
-    while (glfwWindowShouldClose(mainWindow.handle()) == GLFW_FALSE)
+    vkt::RunResult runResult{vkt::RunResult::SUCCESS};
+
+    while (glfwWindowShouldClose(resources.window.handle()) == GLFW_FALSE)
     {
         glfwPollEvents();
 
-        if (glfwGetWindowAttrib(mainWindow.handle(), GLFW_ICONIFIED)
+        if (glfwGetWindowAttrib(resources.window.handle(), GLFW_ICONIFIED)
             == GLFW_TRUE)
         {
             std::this_thread::sleep_for(1ms);
             continue;
         }
 
-        if (VkResult const beginFrameResult{frameBuffer.beginNewFrame()};
-            beginFrameResult != VK_SUCCESS)
+        LoopResult const loopResult{mainLoop(resourcesResult.value(), config)};
+        switch (loopResult)
         {
-            VKT_LOG_VK(beginFrameResult, "Failed to begin frame.");
-            return vkt::RunResult::FAILURE;
-        }
-        VkCommandBuffer const cmd{frameBuffer.currentFrame().mainCommandBuffer};
-
-        {
-            vkt::DockingLayout const& dockingLayout{uiLayer.begin()};
-
-            uiLayer.HUDMenuToggle(
-                "Display",
-                "Nonlinear Encoding Post-Process",
-                nonlinearEncodingEnabled
-            );
-
-            std::optional<vkt::SceneViewport> sceneViewport{
-                uiLayer.sceneViewport()
-            };
-
-            if (sceneViewport.has_value())
-            {
-                renderer.recordDraw(cmd, sceneViewport.value().texture);
-            }
-
-            uiLayer.end();
-        }
-
-        std::optional<std::reference_wrapper<vkt::SceneTexture>> uiOutput{
-            uiLayer.recordDraw(cmd)
-        };
-
-        if (!uiOutput.has_value())
-        {
-            // TODO: make this not a fatal error, but that requires better
-            // handling on frame resources like the open command buffer
-            VKT_ERROR("UI Layer did not have output image.");
-            return vkt::RunResult::FAILURE;
-        }
-
-        if (nonlinearEncodingEnabled)
-        {
-            postProcess.recordLinearToSRGB(cmd, uiOutput.value());
-        }
-
-        if (VkResult const endFrameResult{frameBuffer.finishFrameWithPresent(
-                swapchain, graphicsContext.universalQueue(), uiOutput.value()
-            )};
-            endFrameResult != VK_SUCCESS)
-        {
-            if (endFrameResult != VK_ERROR_OUT_OF_DATE_KHR)
-            {
-                VKT_LOG_VK(
-                    endFrameResult,
-                    "Failed to end frame, due to non-out-of-date error."
-                );
-                return vkt::RunResult::FAILURE;
-            }
-
-            if (VkResult rebuildResult{swapchain.rebuild()};
-                rebuildResult != VK_SUCCESS)
-            {
-                VKT_LOG_VK(
-                    rebuildResult, "Failed to rebuild swapchain for resizing."
-                );
-                return vkt::RunResult::FAILURE;
-            }
+        case LoopResult::CONTINUE:
+            continue;
+        case LoopResult::FATAL_ERROR:
+            runResult = vkt::RunResult::FAILURE;
+            break;
         }
     }
 
-    vkDeviceWaitIdle(graphicsContext.device());
+    vkDeviceWaitIdle(resources.graphics.device());
 
-    return vkt::RunResult::SUCCESS;
+    return runResult;
 }
 
 } // namespace detail
@@ -262,7 +288,7 @@ auto run() -> RunResult
         return RunResult::FAILURE;
     }
 
-    RunResult const result{detail::mainLoop()};
+    RunResult const result{detail::runApp()};
 
     glfwTerminate();
 
