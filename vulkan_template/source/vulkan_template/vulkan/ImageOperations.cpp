@@ -123,8 +123,7 @@ auto aspectRatio(VkExtent2D const extent) -> std::optional<double>
     auto const width{static_cast<float>(extent.width)};
     auto const height{static_cast<float>(extent.height)};
 
-    double const rawAspectRatio =
-        static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    double const rawAspectRatio = width / height;
 
     if (!glm::isfinite(rawAspectRatio))
     {
