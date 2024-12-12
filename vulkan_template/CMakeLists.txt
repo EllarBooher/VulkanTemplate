@@ -14,7 +14,7 @@ add_library(
 	"source/vulkan_template/app/Swapchain.cpp" 
 	"source/vulkan_template/app/UILayer.cpp" 
 	"source/vulkan_template/app/PlatformWindow.cpp"
-	"source/vulkan_template/app/SceneTexture.cpp" 
+	"source/vulkan_template/app/RenderTarget.cpp"
 	"source/vulkan_template/app/Renderer.cpp"
 	"source/vulkan_template/app/PostProcess.cpp" 
 

@@ -12,7 +12,7 @@
 namespace vkt
 {
 struct PlatformWindow;
-struct SceneTexture;
+struct RenderTarget;
 } // namespace vkt
 
 namespace vkt
@@ -20,7 +20,7 @@ namespace vkt
 struct SceneViewport
 {
     bool focused;
-    std::reference_wrapper<SceneTexture> texture;
+    std::reference_wrapper<RenderTarget> texture;
 
     // The screen-space pixels that the viewport takes up in the UI, useful for
     // transforming application window coordinates into scene world coordinates,
@@ -103,13 +103,13 @@ public:
 
     // TODO: remove this once able to, to encapsulate scene texture and defer
     // exposing it until rendering time
-    [[nodiscard]] auto sceneTexture() -> SceneTexture const&;
+    [[nodiscard]] auto sceneTexture() -> RenderTarget const&;
 
     void end();
 
     // Returns the final output image that should be presented.
     auto recordDraw(VkCommandBuffer)
-        -> std::optional<std::reference_wrapper<SceneTexture>>;
+        -> std::optional<std::reference_wrapper<RenderTarget>>;
 
 private:
     bool m_backendInitialized{false};
@@ -127,12 +127,12 @@ private:
     DockingLayout m_currentDockingLayout{};
 
     // A sub-texture used by the UI backend to render a scene viewport.
-    std::unique_ptr<SceneTexture> m_sceneTexture;
+    std::unique_ptr<RenderTarget> m_sceneTexture;
     // An opaque handle from the Vulkan backend that contains the scene texture
     ImTextureID m_imguiSceneTextureHandle{nullptr};
 
     // The final output of the application viewport, with all geometry and UI
     // rendered
-    std::unique_ptr<SceneTexture> m_outputTexture;
+    std::unique_ptr<RenderTarget> m_outputTexture;
 };
 } // namespace vkt

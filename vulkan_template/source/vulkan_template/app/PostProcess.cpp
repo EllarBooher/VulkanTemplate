@@ -1,7 +1,7 @@
 #include "PostProcess.hpp"
 
 #include "vulkan_template/app/DescriptorAllocator.hpp"
-#include "vulkan_template/app/SceneTexture.hpp"
+#include "vulkan_template/app/RenderTarget.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/ImageView.hpp"
@@ -132,7 +132,7 @@ auto vkt::PostProcess::create(VkDevice const device)
 }
 
 void vkt::PostProcess::recordLinearToSRGB(
-    VkCommandBuffer const cmd, SceneTexture& texture
+    VkCommandBuffer const cmd, RenderTarget& texture
 )
 {
     VkShaderStageFlagBits const stage{VK_SHADER_STAGE_COMPUTE_BIT};

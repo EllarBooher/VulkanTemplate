@@ -1,6 +1,6 @@
 #include "Renderer.hpp"
 
-#include "vulkan_template/app/SceneTexture.hpp"
+#include "vulkan_template/app/RenderTarget.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/ImageView.hpp"
@@ -41,7 +41,7 @@ auto Renderer::create(VkDevice const device) -> std::optional<Renderer>
 
     std::filesystem::path const shaderPath{"shaders/testpattern.comp.spv"};
 
-    if (auto const descriptorResult{SceneTexture::allocateSingletonLayout(device
+    if (auto const descriptorResult{RenderTarget::allocateSingletonLayout(device
         )};
         descriptorResult.has_value())
     {
@@ -102,7 +102,7 @@ auto Renderer::create(VkDevice const device) -> std::optional<Renderer>
 
     return result;
 }
-void Renderer::recordDraw(VkCommandBuffer const cmd, SceneTexture& destination)
+void Renderer::recordDraw(VkCommandBuffer const cmd, RenderTarget& destination)
     const
 {
     VkShaderStageFlagBits const stage{VK_SHADER_STAGE_COMPUTE_BIT};

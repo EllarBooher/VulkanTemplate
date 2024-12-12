@@ -5,7 +5,7 @@
 
 namespace vkt
 {
-struct SceneTexture;
+struct RenderTarget;
 } // namespace vkt
 
 namespace vkt
@@ -24,7 +24,7 @@ struct PostProcess
 
     // Assumes the input texture is linearly encoded. Schedules compute work to
     // in-place convert to nonlinear SRGB encoding.
-    void recordLinearToSRGB(VkCommandBuffer, SceneTexture&);
+    void recordLinearToSRGB(VkCommandBuffer, RenderTarget&);
 
 private:
     PostProcess() = default;

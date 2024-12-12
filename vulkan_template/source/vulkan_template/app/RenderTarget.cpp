@@ -1,4 +1,4 @@
-#include "SceneTexture.hpp"
+#include "RenderTarget.hpp"
 
 #include "vulkan_template/app/DescriptorAllocator.hpp"
 #include "vulkan_template/core/Log.hpp"
@@ -13,12 +13,12 @@
 
 namespace vkt
 {
-SceneTexture::SceneTexture(SceneTexture&& other) noexcept
+RenderTarget::RenderTarget(RenderTarget&& other) noexcept
 {
     *this = std::move(other);
 }
 
-auto SceneTexture::operator=(SceneTexture&& other) noexcept -> SceneTexture&
+auto RenderTarget::operator=(RenderTarget&& other) noexcept -> RenderTarget&
 {
     destroy();
 
@@ -45,13 +45,13 @@ auto SceneTexture::operator=(SceneTexture&& other) noexcept -> SceneTexture&
     return *this;
 }
 
-SceneTexture::~SceneTexture() { destroy(); }
+RenderTarget::~RenderTarget() { destroy(); }
 
-auto SceneTexture::create(
+auto RenderTarget::create(
     VkDevice const device,
     VmaAllocator const allocator,
     CreateParameters const parameters
-) -> std::optional<SceneTexture>
+) -> std::optional<RenderTarget>
 {
     if (ImGui::GetIO().BackendRendererUserData == nullptr)
     {
@@ -59,9 +59,9 @@ auto SceneTexture::create(
         return std::nullopt;
     }
 
-    std::optional<SceneTexture> result{SceneTexture{}};
-    SceneTexture& sceneTexture{result.value()};
-    sceneTexture.m_device = device;
+    std::optional<RenderTarget> result{RenderTarget{}};
+    RenderTarget& renderTarget{result.value()};
+    renderTarget.m_device = device;
 
     std::array<DescriptorAllocator::PoolSizeRatio, 2> poolRatios{
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
@@ -69,7 +69,7 @@ auto SceneTexture::create(
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         1.0F,
     };
-    sceneTexture.m_descriptorPool =
+    renderTarget.m_descriptorPool =
         std::make_unique<DescriptorAllocator>(DescriptorAllocator::create(
             device, 4, poolRatios, static_cast<VkFlags>(0)
         ));
@@ -96,7 +96,7 @@ auto SceneTexture::create(
         };
         colorResult.has_value() && colorResult.value() != nullptr)
     {
-        sceneTexture.m_color = std::move(colorResult).value();
+        renderTarget.m_color = std::move(colorResult).value();
 
         VkSamplerCreateInfo const samplerInfo{samplerCreateInfo(
             0,
@@ -108,7 +108,7 @@ auto SceneTexture::create(
         VkSampler sampler{VK_NULL_HANDLE};
         VKT_TRY_VK(
             vkCreateSampler(
-                device, &samplerInfo, nullptr, &sceneTexture.m_colorSampler
+                device, &samplerInfo, nullptr, &renderTarget.m_colorSampler
             ),
             "Failed to allocate sampler.",
             std::nullopt
@@ -141,7 +141,7 @@ auto SceneTexture::create(
         };
         depthResult.has_value() && depthResult.value() != nullptr)
     {
-        sceneTexture.m_depth = std::move(depthResult).value();
+        renderTarget.m_depth = std::move(depthResult).value();
 
         VkSamplerCreateInfo const samplerInfo{samplerCreateInfo(
             0,
@@ -152,7 +152,7 @@ auto SceneTexture::create(
 
         VKT_TRY_VK(
             vkCreateSampler(
-                device, &samplerInfo, nullptr, &sceneTexture.m_depthSampler
+                device, &samplerInfo, nullptr, &renderTarget.m_depthSampler
             ),
             "Failed to allocate sampler.",
             std::nullopt
@@ -167,10 +167,10 @@ auto SceneTexture::create(
     if (auto const singletonResult{allocateSingletonLayout(device)};
         singletonResult.has_value())
     {
-        sceneTexture.m_singletonDescriptorLayout = singletonResult.value();
-        sceneTexture.m_singletonDescriptor =
-            sceneTexture.m_descriptorPool->allocate(
-                device, sceneTexture.m_singletonDescriptorLayout
+        renderTarget.m_singletonDescriptorLayout = singletonResult.value();
+        renderTarget.m_singletonDescriptor =
+            renderTarget.m_descriptorPool->allocate(
+                device, renderTarget.m_singletonDescriptorLayout
             );
     }
     else
@@ -182,10 +182,10 @@ auto SceneTexture::create(
     if (auto const combinedResult{allocateCombinedLayout(device)};
         combinedResult.has_value())
     {
-        sceneTexture.m_combinedDescriptorLayout = combinedResult.value();
-        sceneTexture.m_combinedDescriptor =
-            sceneTexture.m_descriptorPool->allocate(
-                device, sceneTexture.m_combinedDescriptorLayout
+        renderTarget.m_combinedDescriptorLayout = combinedResult.value();
+        renderTarget.m_combinedDescriptor =
+            renderTarget.m_descriptorPool->allocate(
+                device, renderTarget.m_combinedDescriptorLayout
             );
     }
     else
@@ -197,12 +197,12 @@ auto SceneTexture::create(
     {
         VkDescriptorImageInfo const colorInfo{
             .sampler = VK_NULL_HANDLE,
-            .imageView = sceneTexture.m_color->view(),
+            .imageView = renderTarget.m_color->view(),
             .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
         };
         VkDescriptorImageInfo const depthInfo{
-            .sampler = sceneTexture.m_depthSampler,
-            .imageView = sceneTexture.m_depth->view(),
+            .sampler = renderTarget.m_depthSampler,
+            .imageView = renderTarget.m_depth->view(),
             .imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
         };
 
@@ -210,7 +210,7 @@ auto SceneTexture::create(
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .pNext = nullptr,
 
-            .dstSet = sceneTexture.m_singletonDescriptor,
+            .dstSet = renderTarget.m_singletonDescriptor,
             .dstBinding = 0,
             .dstArrayElement = 0,
             .descriptorCount = 1,
@@ -225,7 +225,7 @@ auto SceneTexture::create(
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .pNext = nullptr,
 
-            .dstSet = sceneTexture.m_combinedDescriptor,
+            .dstSet = renderTarget.m_combinedDescriptor,
             .dstBinding = 0,
             .dstArrayElement = 0,
             .descriptorCount = 1,
@@ -240,7 +240,7 @@ auto SceneTexture::create(
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .pNext = nullptr,
 
-            .dstSet = sceneTexture.m_combinedDescriptor,
+            .dstSet = renderTarget.m_combinedDescriptor,
             .dstBinding = 1,
             .dstArrayElement = 0,
             .descriptorCount = 1,
@@ -261,7 +261,7 @@ auto SceneTexture::create(
     return result;
 }
 
-auto SceneTexture::allocateSingletonLayout(VkDevice const device)
+auto RenderTarget::allocateSingletonLayout(VkDevice const device)
     -> std::optional<VkDescriptorSetLayout>
 {
     auto const layoutResult{
@@ -287,7 +287,7 @@ auto SceneTexture::allocateSingletonLayout(VkDevice const device)
     return layoutResult.value();
 }
 
-auto SceneTexture::allocateCombinedLayout(VkDevice const device)
+auto RenderTarget::allocateCombinedLayout(VkDevice const device)
     -> std::optional<VkDescriptorSetLayout>
 {
     auto const layoutResult{
@@ -322,41 +322,41 @@ auto SceneTexture::allocateCombinedLayout(VkDevice const device)
     return layoutResult.value();
 }
 
-auto SceneTexture::colorSampler() const -> VkSampler { return m_colorSampler; }
+auto RenderTarget::colorSampler() const -> VkSampler { return m_colorSampler; }
 
-auto SceneTexture::color() -> ImageView& { return *m_color; }
+auto RenderTarget::color() -> ImageView& { return *m_color; }
 
-auto SceneTexture::color() const -> ImageView const& { return *m_color; }
+auto RenderTarget::color() const -> ImageView const& { return *m_color; }
 
-auto SceneTexture::depth() -> ImageView& { return *m_depth; }
+auto RenderTarget::depth() -> ImageView& { return *m_depth; }
 
-auto SceneTexture::depth() const -> ImageView const& { return *m_depth; }
+auto RenderTarget::depth() const -> ImageView const& { return *m_depth; }
 
-auto SceneTexture::singletonDescriptor() const -> VkDescriptorSet
+auto RenderTarget::singletonDescriptor() const -> VkDescriptorSet
 {
     return m_singletonDescriptor;
 }
 
-auto SceneTexture::singletonLayout() const -> VkDescriptorSetLayout
+auto RenderTarget::singletonLayout() const -> VkDescriptorSetLayout
 {
     return m_singletonDescriptorLayout;
 }
 
-auto SceneTexture::combinedDescriptor() const -> VkDescriptorSet
+auto RenderTarget::combinedDescriptor() const -> VkDescriptorSet
 {
     return m_combinedDescriptor;
 }
 
-auto SceneTexture::combinedDescriptorLayout() const -> VkDescriptorSetLayout
+auto RenderTarget::combinedDescriptorLayout() const -> VkDescriptorSetLayout
 {
     return m_combinedDescriptorLayout;
 }
 
-void SceneTexture::setSize(VkRect2D const size) { m_size = size; }
+void RenderTarget::setSize(VkRect2D const size) { m_size = size; }
 
-auto SceneTexture::size() const -> VkRect2D { return m_size; }
+auto RenderTarget::size() const -> VkRect2D { return m_size; }
 
-void SceneTexture::destroy() noexcept
+void RenderTarget::destroy() noexcept
 {
     if (m_device != VK_NULL_HANDLE)
     {

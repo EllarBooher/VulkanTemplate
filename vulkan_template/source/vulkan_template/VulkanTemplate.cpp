@@ -20,7 +20,7 @@
 
 namespace vkt
 {
-struct SceneTexture;
+struct RenderTarget;
 } // namespace vkt
 
 namespace detail
@@ -194,7 +194,7 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
         uiLayer.end();
     }
 
-    std::optional<std::reference_wrapper<vkt::SceneTexture>> uiOutput{
+    std::optional<std::reference_wrapper<vkt::RenderTarget>> uiOutput{
         uiLayer.recordDraw(cmd)
     };
 

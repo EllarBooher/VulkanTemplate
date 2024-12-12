@@ -1,7 +1,7 @@
 #include "UILayer.hpp"
 
 #include "vulkan_template/app/PlatformWindow.hpp"
-#include "vulkan_template/app/SceneTexture.hpp"
+#include "vulkan_template/app/RenderTarget.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/core/UIRectangle.hpp"
 #include "vulkan_template/core/UIWindowScope.hpp"
@@ -532,10 +532,10 @@ auto UILayer::create(
 
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    if (std::optional<SceneTexture> outputTextureResult{SceneTexture::create(
+    if (std::optional<RenderTarget> outputTextureResult{RenderTarget::create(
             device,
             allocator,
-            SceneTexture::CreateParameters{
+            RenderTarget::CreateParameters{
                 .max = textureCapacity,
                 .color = VK_FORMAT_R16G16B16A16_UNORM,
                 .depth = VK_FORMAT_D32_SFLOAT
@@ -543,7 +543,7 @@ auto UILayer::create(
         )};
         outputTextureResult.has_value())
     {
-        layer.m_outputTexture = std::make_unique<SceneTexture>(
+        layer.m_outputTexture = std::make_unique<RenderTarget>(
             std::move(outputTextureResult).value()
         );
     }
@@ -552,10 +552,10 @@ auto UILayer::create(
         VKT_ERROR("Failed to allocate UI Layer output texture.");
         return std::nullopt;
     }
-    if (std::optional<SceneTexture> sceneTextureResult{SceneTexture::create(
+    if (std::optional<RenderTarget> sceneTextureResult{RenderTarget::create(
             device,
             allocator,
-            SceneTexture::CreateParameters{
+            RenderTarget::CreateParameters{
                 .max = textureCapacity,
                 .color = VK_FORMAT_R16G16B16A16_UNORM,
                 .depth = VK_FORMAT_D32_SFLOAT
@@ -564,10 +564,10 @@ auto UILayer::create(
         sceneTextureResult.has_value())
     {
         layer.m_sceneTexture =
-            std::make_unique<SceneTexture>(std::move(sceneTextureResult).value()
+            std::make_unique<RenderTarget>(std::move(sceneTextureResult).value()
             );
 
-        SceneTexture& sceneTexture{*layer.m_sceneTexture};
+        RenderTarget& sceneTexture{*layer.m_sceneTexture};
 
         layer.m_imguiSceneTextureHandle = ImGui_ImplVulkan_AddTexture(
             sceneTexture.colorSampler(),
@@ -740,7 +740,7 @@ auto UILayer::sceneViewport(bool const forceFocus)
     };
 }
 
-auto UILayer::sceneTexture() -> SceneTexture const& { return *m_sceneTexture; }
+auto UILayer::sceneTexture() -> RenderTarget const& { return *m_sceneTexture; }
 
 void UILayer::end()
 {
@@ -755,7 +755,7 @@ void UILayer::end()
     m_open = false;
 }
 auto UILayer::recordDraw(VkCommandBuffer const cmd)
-    -> std::optional<std::reference_wrapper<SceneTexture>>
+    -> std::optional<std::reference_wrapper<RenderTarget>>
 {
     if (m_outputTexture == nullptr)
     {

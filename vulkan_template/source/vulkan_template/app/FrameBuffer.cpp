@@ -1,6 +1,6 @@
 #include "FrameBuffer.hpp"
 
-#include "vulkan_template/app/SceneTexture.hpp"
+#include "vulkan_template/app/RenderTarget.hpp"
 #include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/Image.hpp"
@@ -251,7 +251,7 @@ auto FrameBuffer::currentFrame() const -> Frame const&
 auto FrameBuffer::finishFrameWithPresent(
     Swapchain& swapchain,
     VkQueue const submissionQueue,
-    SceneTexture& sourceTexture
+    RenderTarget& sourceTexture
 ) -> VkResult
 {
     // Copy image to swapchain

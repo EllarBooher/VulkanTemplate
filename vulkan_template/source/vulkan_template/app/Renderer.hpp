@@ -5,7 +5,7 @@
 
 namespace vkt
 {
-struct SceneTexture;
+struct RenderTarget;
 } // namespace vkt
 
 namespace vkt
@@ -26,7 +26,7 @@ private:
 public:
     static auto create(VkDevice) -> std::optional<Renderer>;
 
-    void recordDraw(VkCommandBuffer, SceneTexture&) const;
+    void recordDraw(VkCommandBuffer, RenderTarget&) const;
 
 private:
     VkDescriptorSetLayout m_destinationSingletonLayout{VK_NULL_HANDLE};

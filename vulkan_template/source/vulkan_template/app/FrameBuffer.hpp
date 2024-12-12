@@ -8,7 +8,7 @@
 namespace vkt
 {
 struct Swapchain;
-struct SceneTexture;
+struct RenderTarget;
 } // namespace vkt
 
 namespace vkt
@@ -63,7 +63,7 @@ public:
     [[nodiscard]] auto finishFrameWithPresent(
         Swapchain& swapchain,
         VkQueue submissionQueue,
-        SceneTexture& sourceTexture
+        RenderTarget& sourceTexture
     ) -> VkResult;
 
 private:

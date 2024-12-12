@@ -8,15 +8,15 @@
 
 namespace vkt
 {
-struct SceneTexture
+struct RenderTarget
 {
-    SceneTexture(SceneTexture const&) = delete;
-    auto operator=(SceneTexture const&) -> SceneTexture& = delete;
+    RenderTarget(RenderTarget const&) = delete;
+    auto operator=(RenderTarget const&) -> RenderTarget& = delete;
 
-    SceneTexture(SceneTexture&&) noexcept;
-    auto operator=(SceneTexture&&) noexcept -> SceneTexture&;
+    RenderTarget(RenderTarget&&) noexcept;
+    auto operator=(RenderTarget&&) noexcept -> RenderTarget&;
 
-    ~SceneTexture();
+    ~RenderTarget();
 
     struct CreateParameters
     {
@@ -30,16 +30,7 @@ struct SceneTexture
     // Thus the texture should be large enough to handle as large as the window
     // is expected to get.
     static auto create(VkDevice, VmaAllocator, CreateParameters)
-        -> std::optional<SceneTexture>;
-
-    // Convenience methods to help pipelines get the layout SceneTexture will
-    // provide its descriptors in without needing an instance of scene texture
-
-    static auto allocateSingletonLayout(VkDevice)
-        -> std::optional<VkDescriptorSetLayout>;
-
-    static auto allocateCombinedLayout(VkDevice)
-        -> std::optional<VkDescriptorSetLayout>;
+        -> std::optional<RenderTarget>;
 
     [[nodiscard]] auto colorSampler() const -> VkSampler;
 
@@ -50,21 +41,27 @@ struct SceneTexture
 
     // A descriptor set that contains just this image in binding 0 for compute
     // shaders.
-    // layout(rgba16, binding = 0) uniform image2D image;
+    // layout(binding = 0) uniform image2D image;
+
     [[nodiscard]] auto singletonDescriptor() const -> VkDescriptorSet;
     [[nodiscard]] auto singletonLayout() const -> VkDescriptorSetLayout;
+    static auto allocateSingletonLayout(VkDevice)
+        -> std::optional<VkDescriptorSetLayout>;
 
     // layout(binding = 0) uniform image2D image;
     // layout(binding = 1) uniform sampler2D fragmentDepth;
+
     [[nodiscard]] auto combinedDescriptor() const -> VkDescriptorSet;
     [[nodiscard]] auto combinedDescriptorLayout() const
         -> VkDescriptorSetLayout;
+    static auto allocateCombinedLayout(VkDevice)
+        -> std::optional<VkDescriptorSetLayout>;
 
     void setSize(VkRect2D);
     [[nodiscard]] auto size() const -> VkRect2D;
 
 private:
-    SceneTexture() = default;
+    RenderTarget() = default;
 
     void destroy() noexcept;
 
