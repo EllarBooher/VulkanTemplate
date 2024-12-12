@@ -8,12 +8,12 @@
 
 namespace vkt
 {
-auto DescriptorLayoutBuilder::addBinding(
-    AddBindingParameters const parameters, uint32_t const count
+auto DescriptorLayoutBuilder::pushBinding(
+    BindingParams const parameters, uint32_t const count
 ) -> DescriptorLayoutBuilder&
 {
     VkDescriptorSetLayoutBinding const newBinding{
-        .binding = parameters.binding,
+        .binding = static_cast<uint32_t>(m_bindings.size()),
         .descriptorType = parameters.type,
         .descriptorCount = count,
         .stageFlags = parameters.stageMask,
@@ -28,15 +28,14 @@ auto DescriptorLayoutBuilder::addBinding(
     return *this;
 }
 
-auto DescriptorLayoutBuilder::addBinding(
-    AddBindingParameters const parameters, std::vector<VkSampler> samplers
+auto DescriptorLayoutBuilder::pushBinding(
+    BindingParams const parameters, std::vector<VkSampler> samplers
 ) -> DescriptorLayoutBuilder&
 {
-    // We leave data uninitialized until layout creation time.
-    // This keeps the immutable samplers in alive in a managed container,
-    // while avoiding carrying self-referential pointers here.
+    // We leave pImmutableSamplers/descriptorCount unset until set creation
+    // time, to avoid self-referential data.
     VkDescriptorSetLayoutBinding const newBinding{
-        .binding = parameters.binding,
+        .binding = static_cast<uint32_t>(m_bindings.size()),
         .descriptorType = parameters.type,
         .descriptorCount = 0,
         .stageFlags = parameters.stageMask,
@@ -51,8 +50,6 @@ auto DescriptorLayoutBuilder::addBinding(
 
     return *this;
 }
-
-void DescriptorLayoutBuilder::clear() { m_bindings.clear(); }
 
 auto DescriptorLayoutBuilder::build(
     VkDevice const device, VkDescriptorSetLayoutCreateFlags const layoutFlags

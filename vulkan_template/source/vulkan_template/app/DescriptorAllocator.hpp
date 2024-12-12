@@ -10,25 +10,21 @@ namespace vkt
 {
 struct DescriptorLayoutBuilder
 {
-    struct AddBindingParameters
+    struct BindingParams
     {
-        uint32_t binding;
         VkDescriptorType type;
         VkShaderStageFlags stageMask;
         VkDescriptorBindingFlags bindingFlags;
     };
 
-    // Adds an additional binding that will be built.
-    auto addBinding(AddBindingParameters parameters, uint32_t count)
+    // Pushes an additional binding, with binding number after the last.
+    auto pushBinding(BindingParams parameters, uint32_t count = 1)
         -> DescriptorLayoutBuilder&;
 
-    // Adds an additional binding that will be built. Infers the count from the
-    // length of samplers.
-    auto
-    addBinding(AddBindingParameters parameters, std::vector<VkSampler> samplers)
+    // Pushes an additional binding plus immutable samplers, with binding number
+    // after the last.
+    auto pushBinding(BindingParams parameters, std::vector<VkSampler> samplers)
         -> DescriptorLayoutBuilder&;
-
-    void clear();
 
     auto
     build(VkDevice device, VkDescriptorSetLayoutCreateFlags layoutFlags) const

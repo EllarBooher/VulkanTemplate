@@ -266,15 +266,11 @@ auto RenderTarget::allocateSingletonLayout(VkDevice const device)
 {
     auto const layoutResult{
         DescriptorLayoutBuilder{}
-            .addBinding(
-                DescriptorLayoutBuilder::AddBindingParameters{
-                    .binding = 0,
-                    .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                    .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
-                    .bindingFlags = 0,
-                },
-                1
-            )
+            .pushBinding(DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+                .bindingFlags = 0,
+            })
             .build(device, 0)
     };
 
@@ -292,24 +288,16 @@ auto RenderTarget::allocateCombinedLayout(VkDevice const device)
 {
     auto const layoutResult{
         DescriptorLayoutBuilder{}
-            .addBinding(
-                DescriptorLayoutBuilder::AddBindingParameters{
-                    .binding = 0,
-                    .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                    .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
-                    .bindingFlags = 0,
-                },
-                1
-            )
-            .addBinding(
-                DescriptorLayoutBuilder::AddBindingParameters{
-                    .binding = 1,
-                    .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
-                    .bindingFlags = 0,
-                },
-                1
-            )
+            .pushBinding(DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+                .bindingFlags = 0,
+            })
+            .pushBinding(DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+                .bindingFlags = 0,
+            })
             .build(device, 0)
     };
 

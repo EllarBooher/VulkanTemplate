@@ -39,8 +39,6 @@ struct RenderTarget
     auto depth() -> ImageView&;
     [[nodiscard]] auto depth() const -> ImageView const&;
 
-    // A descriptor set that contains just this image in binding 0 for compute
-    // shaders.
     // layout(binding = 0) uniform image2D image;
 
     [[nodiscard]] auto singletonDescriptor() const -> VkDescriptorSet;
