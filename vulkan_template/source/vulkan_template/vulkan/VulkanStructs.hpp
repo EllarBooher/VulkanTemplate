@@ -4,7 +4,6 @@
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <optional>
 #include <span>
-#include <string>
 #include <vector>
 
 // Shorthand factory methods for data-holding Vulkan structs, with reasonable
@@ -68,9 +67,7 @@ auto renderingInfo(
 ) -> VkRenderingInfo;
 
 auto pipelineShaderStageCreateInfo(
-    VkShaderStageFlagBits stage,
-    VkShaderModule module,
-    std::string const& entryPoint
+    VkShaderStageFlagBits stage, VkShaderModule module, char const* entryPoint
 ) -> VkPipelineShaderStageCreateInfo;
 
 auto pipelineLayoutCreateInfo(

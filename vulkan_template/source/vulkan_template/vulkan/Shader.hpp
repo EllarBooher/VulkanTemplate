@@ -18,6 +18,9 @@ auto loadShaderObject(
     VkSpecializationInfo specializationInfo
 ) -> std::optional<VkShaderEXT>;
 
+auto loadShaderModule(VkDevice, std::filesystem::path const& path)
+    -> std::optional<VkShaderModule>;
+
 void computeDispatch(
     VkCommandBuffer, VkExtent3D invocations, uint32_t workgroupSize
 );

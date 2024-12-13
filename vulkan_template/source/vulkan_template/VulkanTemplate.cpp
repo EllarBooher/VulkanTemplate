@@ -2,26 +2,28 @@
 
 #include "vulkan_template/app/FrameBuffer.hpp"
 #include "vulkan_template/app/GraphicsContext.hpp"
+#include "vulkan_template/app/Mesh.hpp"
 #include "vulkan_template/app/PlatformWindow.hpp"
 #include "vulkan_template/app/PostProcess.hpp"
+#include "vulkan_template/app/RenderTarget.hpp"
 #include "vulkan_template/app/Renderer.hpp"
 #include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/app/UILayer.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Image.hpp"
+#include "vulkan_template/vulkan/ImageView.hpp"
+#include "vulkan_template/vulkan/Immediate.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <GLFW/glfw3.h>
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <glm/vec2.hpp>
 #include <optional>
 #include <thread>
 #include <utility>
-
-namespace vkt
-{
-struct RenderTarget;
-} // namespace vkt
+#include <vector>
 
 namespace detail
 {
@@ -29,11 +31,13 @@ struct Resources
 {
     vkt::PlatformWindow window;
     vkt::GraphicsContext graphics;
+    vkt::ImmediateSubmissionQueue submissionQueue;
     vkt::Swapchain swapchain;
     vkt::FrameBuffer frameBuffer;
     vkt::UILayer uiLayer;
     vkt::Renderer renderer;
     vkt::PostProcess postProcess;
+    std::vector<vkt::Mesh> meshes;
 };
 struct Config
 {
@@ -70,6 +74,22 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
     vkt::GraphicsContext& graphicsContext{graphicsResult.value()};
+
+    VKT_INFO("Creating Immediate Submission Queue...");
+
+    std::optional<vkt::ImmediateSubmissionQueue> queueResult{
+        vkt::ImmediateSubmissionQueue::create(
+            graphicsContext.device(),
+            graphicsContext.universalQueue(),
+            graphicsContext.universalQueueFamily()
+        )
+    };
+    if (!queueResult.has_value())
+    {
+        VKT_ERROR("Failed to create immediate submission queue.");
+        return std::nullopt;
+    }
+    vkt::ImmediateSubmissionQueue& submissionQueue{queueResult.value()};
 
     VKT_INFO("Creating Swapchain...");
 
@@ -118,9 +138,18 @@ auto initialize() -> std::optional<Resources>
 
     VKT_INFO("Creating Renderer...");
 
-    std::optional<vkt::Renderer> rendererResult{
-        vkt::Renderer::create(graphicsContext.device())
-    };
+    std::optional<vkt::Renderer> rendererResult{vkt::Renderer::create(
+        graphicsContext.device(),
+        graphicsContext.allocator(),
+        submissionQueue,
+        vkt::Renderer::RendererArguments{
+            .color =
+                uiLayerResult.value().sceneTexture().color().image().format(),
+            .depth =
+                uiLayerResult.value().sceneTexture().depth().image().format(),
+            .reverseZ = true
+        }
+    )};
     if (!rendererResult.has_value())
     {
         VKT_ERROR("Failed to create renderer.");
@@ -138,16 +167,32 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
-    VKT_INFO("Successfully initialized Editor resources.");
+    VKT_INFO("Loading Meshes from disk...");
+
+    std::vector<vkt::Mesh> meshes{vkt::Mesh::fromPath(
+        graphicsContext.device(),
+        graphicsContext.allocator(),
+        submissionQueue,
+        "assets/sphere.glb"
+    )};
+    if (meshes.empty())
+    {
+        VKT_ERROR("Failed to load any meshes.");
+        return std::nullopt;
+    }
+
+    VKT_INFO("Successfully initialized Application resources.");
 
     return Resources{
         .window = std::move(windowResult).value(),
         .graphics = std::move(graphicsResult).value(),
+        .submissionQueue = std::move(queueResult).value(),
         .swapchain = std::move(swapchainResult).value(),
         .frameBuffer = std::move(frameBufferResult).value(),
         .uiLayer = std::move(uiLayerResult).value(),
         .renderer = std::move(rendererResult).value(),
         .postProcess = std::move(postProcessResult).value(),
+        .meshes = std::move(meshes),
     };
 }
 
@@ -163,7 +208,7 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
     vkt::Swapchain& swapchain{resources.swapchain};
     vkt::FrameBuffer& frameBuffer{resources.frameBuffer};
     vkt::UILayer& uiLayer{resources.uiLayer};
-    vkt::Renderer const& renderer{resources.renderer};
+    vkt::Renderer& renderer{resources.renderer};
     vkt::PostProcess& postProcess{resources.postProcess};
 
     if (VkResult const beginFrameResult{frameBuffer.beginNewFrame()};
@@ -188,7 +233,9 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
 
         if (sceneViewport.has_value())
         {
-            renderer.recordDraw(cmd, sceneViewport.value().texture);
+            renderer.recordDraw(
+                cmd, sceneViewport.value().texture, resources.meshes[0]
+            );
         }
 
         uiLayer.end();

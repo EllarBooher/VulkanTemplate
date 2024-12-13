@@ -86,7 +86,9 @@ auto loadShaderObject(
     std::vector<uint8_t> const fileBytes{detail::loadFileBytes(path)};
     if (fileBytes.empty())
     {
-        VKT_ERROR("Failed to load file for texture at '{}'", path.string());
+        VKT_ERROR(
+            "Failed to load file for Shader Object at '{}'", path.string()
+        );
         return std::nullopt;
     }
 
@@ -126,6 +128,37 @@ auto loadShaderObject(
     }
 
     return shaderObject;
+}
+auto loadShaderModule(VkDevice const device, std::filesystem::path const& path)
+    -> std::optional<VkShaderModule>
+{
+    std::vector<uint8_t> const fileBytes{detail::loadFileBytes(path)};
+    if (fileBytes.empty())
+    {
+        VKT_ERROR(
+            "Failed to load file for Shader Module at '{}'", path.string()
+        );
+        return std::nullopt;
+    }
+
+    VkShaderModuleCreateInfo const createInfo{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = nullptr,
+
+        .flags = 0,
+
+        .codeSize = fileBytes.size(),
+        .pCode = reinterpret_cast<uint32_t const*>(fileBytes.data()),
+    };
+
+    VkShaderModule shaderModule{VK_NULL_HANDLE};
+    VkResult const result{
+        vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule)
+    };
+
+    VKT_TRY_VK(result, "Failed to compile Shader Module.", std::nullopt);
+
+    return shaderModule;
 }
 void computeDispatch(
     VkCommandBuffer const cmd,

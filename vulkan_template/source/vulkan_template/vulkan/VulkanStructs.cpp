@@ -247,7 +247,7 @@ auto renderingInfo(
 auto pipelineShaderStageCreateInfo(
     VkShaderStageFlagBits const stage,
     VkShaderModule const module,
-    std::string const& entryPoint
+    char const* const entryPoint
 ) -> VkPipelineShaderStageCreateInfo
 {
     return VkPipelineShaderStageCreateInfo{
@@ -257,7 +257,7 @@ auto pipelineShaderStageCreateInfo(
         .flags = 0,
         .stage = stage,
         .module = module,
-        .pName = entryPoint.c_str(),
+        .pName = entryPoint,
         .pSpecializationInfo = nullptr,
     };
 }

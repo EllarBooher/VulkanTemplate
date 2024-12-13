@@ -1,6 +1,8 @@
 #pragma once
 
+#include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
+#include <spdlog/fmt/bundled/core.h>
 #include <vulkan/vk_enum_string_helper.h>
 
 #define VKR_ARRAY(x) static_cast<uint32_t>((x).size()), (x).data()
