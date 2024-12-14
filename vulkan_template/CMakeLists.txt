@@ -32,6 +32,8 @@ add_library(
 	"source/vulkan_template/vulkan/BufferAllocation.cpp"
 	"source/vulkan_template/vulkan/Buffers.cpp" 
 	"source/vulkan_template/vulkan/Immediate.cpp"
+	
+	"source/vulkan_template/platform/PlatformUtilsWindows.cpp"
 )
 
 add_dependencies(vulkan_template_lib shaders)

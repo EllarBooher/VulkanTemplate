@@ -13,6 +13,7 @@
 #include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/app/UILayer.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/platform/PlatformUtils.hpp"
 #include "vulkan_template/vulkan/Image.hpp"
 #include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/Immediate.hpp"
@@ -220,11 +221,20 @@ auto initialize() -> std::optional<Resources>
 
     VKT_INFO("Loading Meshes from disk and creating Scene...");
 
+    std::optional<std::filesystem::path> meshPathResult{
+        vkt::openFile("Load Mesh", windowResult.value())
+    };
+    if (!meshPathResult.has_value())
+    {
+        VKT_ERROR("No path loaded, exiting.");
+        return std::nullopt;
+    }
+
     std::vector<vkt::Mesh> meshes{vkt::Mesh::fromPath(
         graphicsContext.device(),
         graphicsContext.allocator(),
         submissionQueue,
-        "assets/sphere.glb"
+        meshPathResult.value()
     )};
     if (meshes.empty())
     {
