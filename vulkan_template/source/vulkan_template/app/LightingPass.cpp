@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace detail
+namespace
 {
 struct PushConstant
 {
@@ -25,10 +25,12 @@ struct PushConstant
     glm::vec2 gBufferCapacity;
 
     glm::vec4 cameraPosition;
+
+    glm::vec4 lightForward;
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
-static_assert(sizeof(PushConstant) == 32ULL);
-} // namespace detail
+static_assert(sizeof(PushConstant) == 48ULL);
+} // namespace
 
 namespace vkt
 {
@@ -97,7 +99,7 @@ auto LightingPass::create(VkDevice const device) -> std::optional<LightingPass>
     std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .offset = 0,
-        .size = sizeof(detail::PushConstant),
+        .size = sizeof(::PushConstant),
     }};
     VkSpecializationInfo const specialization{};
 
@@ -158,7 +160,7 @@ void LightingPass::recordDraw(
 
     texture.color().recordTransitionBarriered(cmd, VK_IMAGE_LAYOUT_GENERAL);
 
-    VkClearColorValue const clearColor{.float32 = {0.2F, 0.0F, 0.0F, 1.0F}};
+    VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
     texture.color().image().recordClearEntireColor(cmd, &clearColor);
 
     gbuffer.recordTransitionImages(
@@ -181,7 +183,7 @@ void LightingPass::recordDraw(
     VkExtent2D const gBufferCapacity{gbuffer.capacity().value()};
 
     VkRect2D const drawRect{texture.size()};
-    detail::PushConstant const pc{
+    ::PushConstant const pc{
         .offset =
             glm::vec2{
                 static_cast<float>(drawRect.offset.x),
@@ -193,6 +195,7 @@ void LightingPass::recordDraw(
                 static_cast<float>(gBufferCapacity.height)
             },
         .cameraPosition = glm::vec4{0.0F, 0.0F, -5.0F, 1.0F},
+        .lightForward = glm::vec4{0.3F, 1.0F, 0.3F, 0.0F},
     };
 
     vkCmdPushConstants(
@@ -200,7 +203,7 @@ void LightingPass::recordDraw(
         m_shaderLayout,
         VK_SHADER_STAGE_COMPUTE_BIT,
         0,
-        sizeof(detail::PushConstant),
+        sizeof(::PushConstant),
         &pc
     );
 

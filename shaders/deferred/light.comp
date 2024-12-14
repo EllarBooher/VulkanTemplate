@@ -103,13 +103,9 @@ layout(push_constant) uniform PushConstant
     vec2 gBufferCapacity;
 
     vec4 cameraPosition;
-} pc;
 
-struct IncomingLight
-{
-    vec3 lightDirectionUnit;
-    vec3 lightSpectralFactor;
-};
+    vec4 lightForward;
+} pc;
 
 vec3 computeLightContribution(const vec3 lightForward, const PBRTexel material, const vec3 viewDirection)
 {
@@ -146,7 +142,6 @@ void main()
     // No transparent geometry for now, less than 1.0 alpha indicates background texels
     if (gbufferTexel.diffuseColor.a < 1.0)
     {
-        imageStore(image, texelCoord, vec4(0.0, 0.2, 0.0, 1.0));
         return;
     }
 
@@ -155,7 +150,7 @@ void main()
     const vec3 viewDirection = normalize(pc.cameraPosition.xyz - material.position.xyz);
 
     // Slightly offset light
-    const vec3 lightForward = normalize(vec3(0.0, 1.0, 5.0));
+    const vec3 lightForward = normalize(pc.lightForward.xyz);
     const vec3 lightContribution = computeLightContribution(lightForward, material, viewDirection);
 
     imageStore(image, texelCoord, vec4(lightContribution, 1.0));
