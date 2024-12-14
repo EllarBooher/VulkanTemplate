@@ -5,6 +5,7 @@
 layout(location = 0) out vec3 outWorldPosition;
 layout(location = 1) out vec2 outTexCoord;
 layout(location = 2) out vec3 outNormal;
+layout(location = 3) out vec4 outColor;
 
 struct Vertex
 {
@@ -52,6 +53,7 @@ void main()
     gl_Position = pc.cameraProjView * worldPosition;
 
     outNormal = normalize((modelInverseTranspose * vec4(vertex.normal, 0.0)).xyz);
+    outColor = vertex.color;
 
     outTexCoord = vec2(vertex.uv_x, vertex.uv_y);
 }

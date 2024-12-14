@@ -3,6 +3,7 @@
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
+#include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <spdlog/fmt/bundled/core.h>
 #include <spdlog/fmt/bundled/format.h>
 #include <utility>
@@ -186,6 +187,18 @@ void Image::recordTransitionBarriered(
     transitionImage(cmd, m_memory.image, m_recordedLayout, dst, aspectMask);
 
     m_recordedLayout = dst;
+}
+
+void Image::recordClearEntireColor(
+    VkCommandBuffer const cmd, VkClearColorValue const* pColor
+)
+{
+    std::vector<VkImageSubresourceRange> ranges{
+        imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT)
+    };
+    vkCmdClearColorImage(
+        cmd, m_memory.image, m_recordedLayout, pColor, VKR_ARRAY(ranges)
+    );
 }
 
 void Image::recordCopyEntire(

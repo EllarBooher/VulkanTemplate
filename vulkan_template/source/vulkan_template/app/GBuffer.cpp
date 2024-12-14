@@ -348,6 +348,8 @@ auto GBuffer::allocateDescriptorSetLayout(VkDevice const device)
     return descriptorLayoutResult;
 }
 
+auto GBuffer::descriptor() const -> VkDescriptorSet { return m_descriptors; }
+
 auto GBuffer::capacity() const -> std::optional<VkExtent2D>
 {
     if (m_textures.diffuse == nullptr)
@@ -456,7 +458,7 @@ void setRasterizationState(
 
     vkCmdSetPolygonModeEXT(cmd, VK_POLYGON_MODE_FILL);
 
-    vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
+    vkCmdSetFrontFace(cmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
 
     vkCmdSetDepthWriteEnable(cmd, VK_TRUE);
 

@@ -3,6 +3,7 @@
 #include "vulkan_template/app/FrameBuffer.hpp"
 #include "vulkan_template/app/GBuffer.hpp"
 #include "vulkan_template/app/GraphicsContext.hpp"
+#include "vulkan_template/app/LightingPass.hpp"
 #include "vulkan_template/app/Mesh.hpp"
 #include "vulkan_template/app/PlatformWindow.hpp"
 #include "vulkan_template/app/PostProcess.hpp"
@@ -39,6 +40,7 @@ struct Resources
     vkt::UILayer uiLayer;
     vkt::Renderer renderer;
     vkt::GBufferPipeline gbufferPipeline;
+    vkt::LightingPass lightingPass;
     vkt::PostProcess postProcess;
     vkt::GBuffer gbuffer;
     vkt::Scene scene;
@@ -182,6 +184,17 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
+    VKT_INFO("Creating Lighting Pass...");
+
+    std::optional<vkt::LightingPass> lightingPassResult{
+        vkt::LightingPass::create(graphicsContext.device())
+    };
+    if (!lightingPassResult.has_value())
+    {
+        VKT_ERROR("Failed to create Lighting Pass pipeline.");
+        return std::nullopt;
+    }
+
     VKT_INFO("Creating Post Processor...");
 
     std::optional<vkt::PostProcess> postProcessResult{
@@ -240,6 +253,7 @@ auto initialize() -> std::optional<Resources>
         .uiLayer = std::move(uiLayerResult).value(),
         .renderer = std::move(rendererResult).value(),
         .gbufferPipeline = std::move(gbufferPipelineResult).value(),
+        .lightingPass = std::move(lightingPassResult).value(),
         .postProcess = std::move(postProcessResult).value(),
         .gbuffer = std::move(gbufferResult).value(),
         .scene = std::move(sceneResult).value()
@@ -259,9 +273,10 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
     vkt::FrameBuffer& frameBuffer{resources.frameBuffer};
     vkt::UILayer& uiLayer{resources.uiLayer};
     // vkt::Renderer& renderer{resources.renderer};
-    vkt::PostProcess& postProcess{resources.postProcess};
     vkt::GBuffer& gbuffer{resources.gbuffer};
     vkt::GBufferPipeline& gbufferPipeline{resources.gbufferPipeline};
+    vkt::LightingPass& lightingPass{resources.lightingPass};
+    vkt::PostProcess& postProcess{resources.postProcess};
     vkt::Scene& scene{resources.scene};
 
     if (VkResult const beginFrameResult{frameBuffer.beginNewFrame()};
@@ -291,6 +306,9 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
             //);
             gbufferPipeline.recordDraw(
                 cmd, sceneViewport.value().texture, gbuffer, scene
+            );
+            lightingPass.recordDraw(
+                cmd, sceneViewport.value().texture, gbuffer
             );
         }
 

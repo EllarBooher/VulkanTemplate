@@ -65,6 +65,7 @@ public:
     void recordTransitionBarriered(
         VkCommandBuffer, VkImageLayout dst, VkImageAspectFlags
     );
+    void recordClearEntireColor(VkCommandBuffer, VkClearColorValue const*);
 
     // Assumes images are in TRANSFER_[DST/SRC]_OPTIMAL.
     static void recordCopyEntire(

@@ -6,6 +6,7 @@
 layout(location = 0) in vec3 inWorldPosition;
 layout(location = 1) in vec2 inTexCoord;
 layout(location = 2) in vec3 inNormal;
+layout(location = 3) in vec4 inColor;
 
 layout(location = 0) out vec4 outDiffuseColor;
 layout(location = 1) out vec4 outSpecularColor;
@@ -18,10 +19,8 @@ void main()
     outWorldPosition = vec4(inWorldPosition, 1.0);
     outNormal = vec4(inNormal, 0.0);
 
-    const vec4 sampledColor = vec4(inNormal * 0.5 + 0.5, 1.0);
-
-    outDiffuseColor = vec4(sampledColor.rgb, 1.0);
-    outSpecularColor = vec4(sampledColor.rgb, 1.0);
+    outDiffuseColor = vec4(inColor.rgb, 1.0);
+    outSpecularColor = vec4(inColor.rgb, 1.0);
 
     outOcclusionRoughnessMetallic = vec4(1.0, 0.25, 0.0, 0.0);
 }
