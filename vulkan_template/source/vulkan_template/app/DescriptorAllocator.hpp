@@ -69,6 +69,7 @@ public:
     ) -> DescriptorAllocator;
     void clearDescriptors(VkDevice device);
 
+    // Asserts on failure
     auto allocate(VkDevice device, VkDescriptorSetLayout layout)
         -> VkDescriptorSet;
 

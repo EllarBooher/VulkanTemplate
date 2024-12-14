@@ -2,7 +2,9 @@
 
 #extension GL_EXT_buffer_reference2 : require
 
-layout(location = 0) out vec3 outColor;
+layout(location = 0) out vec3 outWorldPosition;
+layout(location = 1) out vec2 outTexCoord;
+layout(location = 2) out vec3 outNormal;
 
 struct Vertex
 {
@@ -39,15 +41,17 @@ layout(push_constant) uniform PushConstant
 
 void main()
 {
-    const mat4 model = pc.modelBuffer.models[gl_InstanceIndex];
-    const mat4 modelInverseTranspose = pc.modelInverseTransposeBuffer.modelInverseTransposes[gl_InstanceIndex];
+    mat4 model = pc.modelBuffer.models[gl_InstanceIndex];
+    mat4 modelInverseTranspose = pc.modelInverseTransposeBuffer.modelInverseTransposes[gl_InstanceIndex];
 
     const Vertex vertex = pc.vertexBuffer.vertices[gl_VertexIndex];
-    
-    vec4 position = pc.cameraProjView * model * vec4(vertex.position, 1.0);
-    const vec4 worldNormal = modelInverseTranspose * vec4(vertex.normal, 1.0);
 
-    gl_Position = position;
-    outColor = vec3(worldNormal.xyz);
-    
+    vec4 worldPosition = model * vec4(vertex.position, 1.0);
+    outWorldPosition = worldPosition.xyz;
+
+    gl_Position = pc.cameraProjView * worldPosition;
+
+    outNormal = normalize((modelInverseTranspose * vec4(vertex.normal, 0.0)).xyz);
+
+    outTexCoord = vec2(vertex.uv_x, vertex.uv_y);
 }

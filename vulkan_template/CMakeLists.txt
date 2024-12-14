@@ -18,6 +18,7 @@ add_library(
 	"source/vulkan_template/app/Renderer.cpp"
 	"source/vulkan_template/app/PostProcess.cpp" 
 	"source/vulkan_template/app/Mesh.cpp" 
+	"source/vulkan_template/app/GBuffer.cpp"
 
 	"source/vulkan_template/vulkan/Image.cpp" 
 	"source/vulkan_template/vulkan/ImageView.cpp" 
@@ -29,6 +30,7 @@ add_library(
 	"source/vulkan_template/vulkan/BufferAllocation.cpp"
 	"source/vulkan_template/vulkan/Buffers.cpp" 
 	"source/vulkan_template/vulkan/Immediate.cpp"
+	"source/vulkan_template/app/Scene.cpp"
 )
 
 add_dependencies(vulkan_template_lib shaders)

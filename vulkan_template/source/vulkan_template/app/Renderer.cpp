@@ -15,7 +15,6 @@
 #include <functional>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
-#include <glm/fwd.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -37,7 +36,7 @@ struct PushConstantVertex
 
     VkDeviceAddress modelInverseTransposeBuffer;
     // NOLINTNEXTLINE(modernize-avoid-c-arrays, readability-magic-numbers)
-    glm::uint8_t padding0[8];
+    uint8_t padding0[8];
 
     glm::mat4x4 cameraProjView;
 };

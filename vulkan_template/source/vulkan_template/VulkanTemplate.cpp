@@ -1,12 +1,14 @@
 #include "vulkan_template/VulkanTemplate.hpp"
 
 #include "vulkan_template/app/FrameBuffer.hpp"
+#include "vulkan_template/app/GBuffer.hpp"
 #include "vulkan_template/app/GraphicsContext.hpp"
 #include "vulkan_template/app/Mesh.hpp"
 #include "vulkan_template/app/PlatformWindow.hpp"
 #include "vulkan_template/app/PostProcess.hpp"
 #include "vulkan_template/app/RenderTarget.hpp"
 #include "vulkan_template/app/Renderer.hpp"
+#include "vulkan_template/app/Scene.hpp"
 #include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/app/UILayer.hpp"
 #include "vulkan_template/core/Log.hpp"
@@ -36,8 +38,10 @@ struct Resources
     vkt::FrameBuffer frameBuffer;
     vkt::UILayer uiLayer;
     vkt::Renderer renderer;
+    vkt::GBufferPipeline gbufferPipeline;
     vkt::PostProcess postProcess;
-    std::vector<vkt::Mesh> meshes;
+    vkt::GBuffer gbuffer;
+    vkt::Scene scene;
 };
 struct Config
 {
@@ -156,6 +160,28 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
+    VKT_INFO("Creating GBuffer Pipeline...");
+
+    std::optional<vkt::GBufferPipeline> gbufferPipelineResult{
+        vkt::GBufferPipeline::create(
+            graphicsContext.device(),
+            vkt::GBufferPipeline::RendererArguments{
+                .color =
+                    uiLayerResult.value().sceneTexture().color().image().format(
+                    ),
+                .depth =
+                    uiLayerResult.value().sceneTexture().depth().image().format(
+                    ),
+                .reverseZ = true
+            }
+        )
+    };
+    if (!gbufferPipelineResult.has_value())
+    {
+        VKT_ERROR("Failed to create GBuffer Pipeline.");
+        return std::nullopt;
+    }
+
     VKT_INFO("Creating Post Processor...");
 
     std::optional<vkt::PostProcess> postProcessResult{
@@ -167,7 +193,18 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
-    VKT_INFO("Loading Meshes from disk...");
+    VKT_INFO("Creating GBuffer...");
+
+    std::optional<vkt::GBuffer> gbufferResult{vkt::GBuffer::create(
+        graphicsContext.device(), graphicsContext.allocator(), TEXTURE_MAX
+    )};
+    if (!gbufferResult.has_value())
+    {
+        VKT_ERROR("Failed to create GBuffer Pipeline.");
+        return std::nullopt;
+    }
+
+    VKT_INFO("Loading Meshes from disk and creating Scene...");
 
     std::vector<vkt::Mesh> meshes{vkt::Mesh::fromPath(
         graphicsContext.device(),
@@ -181,6 +218,17 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
+    std::optional<vkt::Scene> sceneResult{vkt::Scene::create(
+        graphicsContext.device(), graphicsContext.allocator(), submissionQueue
+    )};
+    if (!sceneResult.has_value())
+    {
+        VKT_ERROR("Faield to create scene.");
+        return std::nullopt;
+    }
+    sceneResult.value().mesh =
+        std::make_unique<vkt::Mesh>(std::move(meshes[0]));
+
     VKT_INFO("Successfully initialized Application resources.");
 
     return Resources{
@@ -191,8 +239,10 @@ auto initialize() -> std::optional<Resources>
         .frameBuffer = std::move(frameBufferResult).value(),
         .uiLayer = std::move(uiLayerResult).value(),
         .renderer = std::move(rendererResult).value(),
+        .gbufferPipeline = std::move(gbufferPipelineResult).value(),
         .postProcess = std::move(postProcessResult).value(),
-        .meshes = std::move(meshes),
+        .gbuffer = std::move(gbufferResult).value(),
+        .scene = std::move(sceneResult).value()
     };
 }
 
@@ -208,8 +258,11 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
     vkt::Swapchain& swapchain{resources.swapchain};
     vkt::FrameBuffer& frameBuffer{resources.frameBuffer};
     vkt::UILayer& uiLayer{resources.uiLayer};
-    vkt::Renderer& renderer{resources.renderer};
+    // vkt::Renderer& renderer{resources.renderer};
     vkt::PostProcess& postProcess{resources.postProcess};
+    vkt::GBuffer& gbuffer{resources.gbuffer};
+    vkt::GBufferPipeline& gbufferPipeline{resources.gbufferPipeline};
+    vkt::Scene& scene{resources.scene};
 
     if (VkResult const beginFrameResult{frameBuffer.beginNewFrame()};
         beginFrameResult != VK_SUCCESS)
@@ -233,8 +286,11 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
 
         if (sceneViewport.has_value())
         {
-            renderer.recordDraw(
-                cmd, sceneViewport.value().texture, resources.meshes[0]
+            // renderer.recordDraw(
+            //     cmd, sceneViewport.value().texture, resources.meshes[0]
+            //);
+            gbufferPipeline.recordDraw(
+                cmd, sceneViewport.value().texture, gbuffer, scene
             );
         }
 
