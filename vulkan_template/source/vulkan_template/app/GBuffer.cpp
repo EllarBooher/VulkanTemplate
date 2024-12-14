@@ -1,21 +1,22 @@
 #include "GBuffer.hpp"
 
 #include "vulkan_template/app/DescriptorAllocator.hpp"
+#include "vulkan_template/app/Mesh.hpp"
 #include "vulkan_template/app/RenderTarget.hpp"
 #include "vulkan_template/app/Scene.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Buffers.hpp"
 #include "vulkan_template/vulkan/Image.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"
 #include "vulkan_template/vulkan/ImageView.hpp"
-#include "vulkan_template/vulkan/Pipeline.hpp"
 #include "vulkan_template/vulkan/Shader.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <cassert>
+#include <filesystem>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>

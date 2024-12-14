@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <functional>
 #include <glm/vec2.hpp>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <utility>

@@ -1,8 +1,13 @@
 #include "Scene.hpp"
 
+#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/Immediate.hpp"
+#include <functional>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <span>
+#include <utility>
+#include <vector>
 
 auto vkt::Scene::create(
     VkDevice const device,

@@ -62,7 +62,7 @@ public:
     // gbufferOcclusionRoughnessMetallic;
     static auto allocateDescriptorSetLayout(VkDevice)
         -> std::optional<VkDescriptorSetLayout>;
-    auto descriptor() const -> VkDescriptorSet;
+    [[nodiscard]] auto descriptor() const -> VkDescriptorSet;
 
     [[nodiscard]] auto capacity() const -> std::optional<VkExtent2D>;
 

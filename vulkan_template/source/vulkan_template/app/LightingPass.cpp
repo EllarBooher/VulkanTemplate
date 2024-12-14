@@ -2,14 +2,20 @@
 
 #include "vulkan_template/app/GBuffer.hpp"
 #include "vulkan_template/app/RenderTarget.hpp"
+#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Image.hpp"
+#include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/Shader.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanOverloads.hpp"
+#include <cassert>
 #include <filesystem>
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
+#include <span>
 #include <utility>
+#include <vector>
 
 namespace detail
 {

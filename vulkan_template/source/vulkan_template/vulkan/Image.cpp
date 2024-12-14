@@ -7,6 +7,7 @@
 #include <spdlog/fmt/bundled/core.h>
 #include <spdlog/fmt/bundled/format.h>
 #include <utility>
+#include <vector>
 
 namespace vkt
 {
