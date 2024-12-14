@@ -26,7 +26,7 @@
 #include <span>
 #include <utility>
 
-namespace detail
+namespace
 {
 auto allocateTextures(
     VkDevice const device, VmaAllocator const allocator, VkExtent2D const extent
@@ -219,7 +219,7 @@ auto allocateWriteDescriptors(
     return set;
 }
 
-} // namespace detail
+} // namespace
 
 namespace vkt
 {
@@ -267,7 +267,7 @@ auto GBuffer::create(
 
     pipeline.m_device = device;
 
-    auto texturesResult{detail::allocateTextures(device, allocator, capacity)};
+    auto texturesResult{::allocateTextures(device, allocator, capacity)};
     if (!texturesResult.has_value())
     {
         return std::nullopt;
@@ -275,7 +275,7 @@ auto GBuffer::create(
     pipeline.m_textures = std::move(texturesResult).value();
 
     pipeline.m_immutableSamplers =
-        detail::allocateSamplers(device, GBUFFER_TEXTURE_COUNT);
+        ::allocateSamplers(device, GBUFFER_TEXTURE_COUNT);
     assert(
         pipeline.m_immutableSamplers.size() <= GBUFFER_TEXTURE_COUNT
         && "Allocated more samplers than necessary"
@@ -302,7 +302,7 @@ auto GBuffer::create(
     }
     pipeline.m_descriptorLayout = descriptorLayoutResult.value();
 
-    auto descriptorsResult{detail::allocateWriteDescriptors(
+    auto descriptorsResult{::allocateWriteDescriptors(
         device,
         *pipeline.m_descriptorAllocator,
         pipeline.m_descriptorLayout,
@@ -399,7 +399,7 @@ auto GBuffer::attachmentInfo(VkImageLayout const layout) const -> std::array<
 };
 } // namespace vkt
 
-namespace detail
+namespace
 {
 struct PushConstantVertex
 {
@@ -488,7 +488,7 @@ void setRasterizationState(
     vkCmdSetColorBlendEnableEXT(cmd, 0, VKR_ARRAY(attachmentBlendEnabled));
 }
 
-auto cameraProjView2(float const aspectRatio) -> glm::mat4x4
+auto cameraProjView(float const aspectRatio) -> glm::mat4x4
 {
     glm::vec3 const translation{0.0F, 0.0F, -5.0F};
     glm::quat const orientation{glm::identity<glm::quat>()};
@@ -507,7 +507,7 @@ auto cameraProjView2(float const aspectRatio) -> glm::mat4x4
 
     return projection * view;
 }
-} // namespace detail
+} // namespace
 
 namespace vkt
 {
@@ -553,7 +553,7 @@ auto GBufferPipeline::create(
     std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
-        .size = sizeof(detail::PushConstantVertex)
+        .size = sizeof(::PushConstantVertex)
     }};
 
     std::optional<VkShaderEXT> const vertexShaderResult{vkt::loadShaderObject(
@@ -620,7 +620,7 @@ void GBufferPipeline::recordDraw(
         cmd, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     );
 
-    detail::setRasterizationState(
+    ::setRasterizationState(
         cmd,
         m_creationArguments.reverseZ,
         gbuffer.size(),
@@ -683,11 +683,11 @@ void GBufferPipeline::recordDraw(
         auto const aspectRatio{static_cast<float>(
             vkt::aspectRatio(renderTarget.size().extent).value()
         )};
-        glm::mat4x4 const cameraProjView{detail::cameraProjView2(aspectRatio)};
+        glm::mat4x4 const cameraProjView{::cameraProjView(aspectRatio)};
 
         MeshBuffers& meshBuffers{*scene.mesh->meshBuffers};
 
-        detail::PushConstantVertex const vertexPushConstant{
+        ::PushConstantVertex const vertexPushConstant{
             .vertexBuffer = meshBuffers.vertexAddress(),
             .modelBuffer = scene.models->deviceAddress(),
             .modelInverseTransposeBuffer =
@@ -699,7 +699,7 @@ void GBufferPipeline::recordDraw(
             m_graphicsLayout,
             VK_SHADER_STAGE_VERTEX_BIT,
             0,
-            sizeof(detail::PushConstantVertex),
+            sizeof(::PushConstantVertex),
             &vertexPushConstant
         );
 

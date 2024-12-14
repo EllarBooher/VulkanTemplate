@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-namespace detail
+namespace
 {
 struct PushConstantVertex
 {
@@ -60,7 +60,7 @@ auto cameraProjView(float const aspectRatio) -> glm::mat4x4
 
     return projection * view;
 }
-} // namespace detail
+} // namespace
 
 namespace vkt
 {
@@ -295,11 +295,11 @@ void Renderer::recordDraw(
         auto const aspectRatio{static_cast<float>(
             vkt::aspectRatio(renderTarget.size().extent).value()
         )};
-        glm::mat4x4 const cameraProjView{detail::cameraProjView(aspectRatio)};
+        glm::mat4x4 const cameraProjView{::cameraProjView(aspectRatio)};
 
         MeshBuffers& meshBuffers{*mesh.meshBuffers};
 
-        detail::PushConstantVertex const vertexPushConstant{
+        ::PushConstantVertex const vertexPushConstant{
             .vertexBuffer = meshBuffers.vertexAddress(),
             .modelBuffer = m_models->deviceAddress(),
             .modelInverseTransposeBuffer =
@@ -311,7 +311,7 @@ void Renderer::recordDraw(
             m_graphicsLayout,
             VK_SHADER_STAGE_VERTEX_BIT,
             0,
-            sizeof(detail::PushConstantVertex),
+            sizeof(::PushConstantVertex),
             &vertexPushConstant
         );
 

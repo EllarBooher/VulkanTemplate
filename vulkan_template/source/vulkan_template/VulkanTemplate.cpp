@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-namespace detail
+namespace
 {
 struct Resources
 {
@@ -346,7 +346,7 @@ auto runApp() -> vkt::RunResult
     // For usage of time suffixes i.e. 1ms
     using namespace std::chrono_literals;
 
-    std::optional<Resources> resourcesResult{detail::initialize()};
+    std::optional<Resources> resourcesResult{::initialize()};
     if (!resourcesResult.has_value())
     {
         VKT_ERROR("Failed to initialize application resources.");
@@ -387,7 +387,7 @@ auto runApp() -> vkt::RunResult
     return runResult;
 }
 
-} // namespace detail
+} // namespace
 
 namespace vkt
 {
@@ -402,7 +402,7 @@ auto run() -> RunResult
         return RunResult::FAILURE;
     }
 
-    RunResult const result{detail::runApp()};
+    RunResult const result{::runApp()};
 
     glfwTerminate();
 

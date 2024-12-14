@@ -24,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-namespace detail
+namespace
 {
 auto buildDefaultMultiWindowLayout(
     vkt::UIRectangle workArea, ImGuiID parentNode
@@ -271,7 +271,7 @@ auto sceneViewportWindow(
         .focused = clicked,
     };
 }
-} // namespace detail
+} // namespace
 
 namespace vkt
 {
@@ -604,7 +604,7 @@ auto UILayer::begin() -> DockingLayout const&
 
     m_open = true;
 
-    m_currentHUD = detail::renderHUD(m_currentPreferences);
+    m_currentHUD = ::renderHUD(m_currentPreferences);
 
     m_reloadNecessary = m_currentHUD.applyPreferencesRequested
                      || m_currentHUD.resetPreferencesRequested;
@@ -616,7 +616,7 @@ auto UILayer::begin() -> DockingLayout const&
     m_currentDockingLayout = {};
     if (m_currentHUD.rebuildLayoutRequested && m_currentHUD.dockspaceID != 0)
     {
-        m_currentDockingLayout = detail::buildDefaultMultiWindowLayout(
+        m_currentDockingLayout = ::buildDefaultMultiWindowLayout(
             m_currentHUD.workArea, m_currentHUD.dockspaceID
         );
     }
@@ -699,7 +699,7 @@ auto UILayer::sceneViewport(bool const forceFocus)
 
     VkExtent2D const sceneTextureMax{m_sceneTexture->color().image().extent2D()
     };
-    detail::SceneViewportResult const windowResult{detail::sceneViewportWindow(
+    ::SceneViewportResult const windowResult{::sceneViewportWindow(
         m_currentDockingLayout.centerTop,
         m_currentHUD.maximizeSceneViewport ? m_currentHUD.workArea
                                            : std::optional<UIRectangle>{},

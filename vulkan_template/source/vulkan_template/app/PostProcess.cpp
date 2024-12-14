@@ -13,13 +13,13 @@
 #include <utility>
 #include <vector>
 
-namespace detail
+namespace
 {
 struct PushConstant
 {
     glm::vec2 offset;
 };
-} // namespace detail
+} // namespace
 
 auto vkt::PostProcess::operator=(PostProcess&& other) -> PostProcess&
 {
@@ -82,7 +82,7 @@ auto vkt::PostProcess::create(VkDevice const device)
     std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .offset = 0,
-        .size = sizeof(detail::PushConstant)
+        .size = sizeof(::PushConstant)
     }};
     VkSpecializationInfo const specialization{};
 
@@ -150,7 +150,7 @@ void vkt::PostProcess::recordLinearToSRGB(
     uint32_t constexpr WORKGROUP_SIZE{16};
 
     VkRect2D const drawRect{texture.size()};
-    detail::PushConstant const pc{
+    ::PushConstant const pc{
         .offset =
             glm::vec2{
                 static_cast<float>(drawRect.offset.x),
@@ -163,7 +163,7 @@ void vkt::PostProcess::recordLinearToSRGB(
         m_oetfSRGBLayout,
         VK_SHADER_STAGE_COMPUTE_BIT,
         0,
-        sizeof(detail::PushConstant),
+        sizeof(::PushConstant),
         &pc
     );
 

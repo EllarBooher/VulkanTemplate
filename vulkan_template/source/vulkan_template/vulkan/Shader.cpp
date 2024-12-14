@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace detail
+namespace
 {
 auto ensureAbsolutePath(
     std::filesystem::path const& path,
@@ -69,7 +69,7 @@ auto computeDispatchCount(uint32_t invocations, uint32_t workgroupSize)
     return count + 1;
 }
 
-} // namespace detail
+} // namespace
 
 namespace vkt
 {
@@ -83,7 +83,7 @@ auto loadShaderObject(
     VkSpecializationInfo const specializationInfo
 ) -> std::optional<VkShaderEXT>
 {
-    std::vector<uint8_t> const fileBytes{detail::loadFileBytes(path)};
+    std::vector<uint8_t> const fileBytes{::loadFileBytes(path)};
     if (fileBytes.empty())
     {
         VKT_ERROR(
@@ -132,7 +132,7 @@ auto loadShaderObject(
 auto loadShaderModule(VkDevice const device, std::filesystem::path const& path)
     -> std::optional<VkShaderModule>
 {
-    std::vector<uint8_t> const fileBytes{detail::loadFileBytes(path)};
+    std::vector<uint8_t> const fileBytes{::loadFileBytes(path)};
     if (fileBytes.empty())
     {
         VKT_ERROR(
@@ -167,13 +167,13 @@ void computeDispatch(
 )
 {
     uint32_t const X{
-        detail::computeDispatchCount(invocations.width, workgroupSize)
+        ::computeDispatchCount(invocations.width, workgroupSize)
     };
     uint32_t const Y{
-        detail::computeDispatchCount(invocations.height, workgroupSize)
+        ::computeDispatchCount(invocations.height, workgroupSize)
     };
     uint32_t const Z{
-        detail::computeDispatchCount(invocations.depth, workgroupSize)
+        ::computeDispatchCount(invocations.depth, workgroupSize)
     };
 
     vkCmdDispatch(cmd, X, Y, Z);

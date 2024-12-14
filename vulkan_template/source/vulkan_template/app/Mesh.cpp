@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+namespace
+{
 namespace detail_fastgltf
 {
 auto ensureAbsolutePath(
@@ -256,6 +258,7 @@ auto loadMeshes(
     return newMeshes;
 }
 } // namespace detail_fastgltf
+} // namespace
 
 namespace vkt
 {
