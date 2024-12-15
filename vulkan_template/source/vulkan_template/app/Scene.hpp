@@ -24,6 +24,7 @@ struct Scene
     glm::vec3 cameraAxisAngles{};
 
     [[nodiscard]] auto cameraOrientation() const -> glm::quat;
+    [[nodiscard]] auto cameraProjView(float aspectRatio) const -> glm::mat4x4;
 
     std::unique_ptr<Mesh> mesh;
     std::unique_ptr<TStagedBuffer<glm::mat4x4>> models{};

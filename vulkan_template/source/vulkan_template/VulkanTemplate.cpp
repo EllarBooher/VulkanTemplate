@@ -311,6 +311,7 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
         };
 
         scene.controlsWindow(dockingLayout.right);
+        lightingPass.controlsWindow(dockingLayout.right);
 
         if (sceneViewport.has_value())
         {

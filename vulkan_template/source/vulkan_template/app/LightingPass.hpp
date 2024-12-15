@@ -1,6 +1,8 @@
 #pragma once
 
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
+#include <glm/vec3.hpp>
+#include <imgui.h>
 #include <optional>
 
 namespace vkt
@@ -12,6 +14,19 @@ struct Scene;
 
 namespace vkt
 {
+struct LightingPassParameters
+{
+    bool enableAO;
+
+    glm::vec3 lightAxisAngles;
+    float lightStrength;
+    float ambientStrength;
+
+    float occluderRadius;
+    float occluderBias;
+    float aoScale;
+};
+
 struct LightingPass
 {
     auto operator=(LightingPass&&) -> LightingPass&;
@@ -26,6 +41,8 @@ struct LightingPass
 
     void
     recordDraw(VkCommandBuffer, RenderTarget&, GBuffer const&, Scene const&);
+
+    void controlsWindow(std::optional<ImGuiID> dockNode);
 
 private:
     LightingPass() = default;
@@ -44,7 +61,11 @@ private:
     VkDescriptorSetLayout m_renderTargetLayout{};
     VkDescriptorSetLayout m_gbufferLayout{};
 
-    VkShaderEXT m_shader{VK_NULL_HANDLE};
+    static LightingPassParameters DEFAULT_PARAMETERS;
+    LightingPassParameters m_parameters{DEFAULT_PARAMETERS};
+
+    VkShaderEXT m_shaderWithoutAO{VK_NULL_HANDLE};
+    VkShaderEXT m_shaderWithAO{VK_NULL_HANDLE};
     VkPipelineLayout m_shaderLayout{VK_NULL_HANDLE};
 };
 } // namespace vkt

@@ -1,6 +1,5 @@
 #version 460
 #extension GL_EXT_buffer_reference2 : require
-#extension GL_ARB_shading_language_include : require
 
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba16, set = 0, binding = 0) uniform image2D image;
@@ -105,7 +104,21 @@ layout(push_constant) uniform PushConstant
     vec4 cameraPosition;
 
     vec4 lightForward;
+
+    mat4 cameraProjView;
+
+    vec2 extent;
+
+    float occluderRadius;
+    float occluderBias;
+    float aoScale;
+    float lightStrength;
+
+    float ambientStrength;
+    vec3 padding0;
 } pc;
+
+layout(constant_id = 0) const bool includeAO = false;
 
 vec3 computeLightContribution(const vec3 lightForward, const PBRTexel material, const vec3 viewDirection)
 {
@@ -120,8 +133,70 @@ vec3 computeLightContribution(const vec3 lightForward, const PBRTexel material, 
     const vec3 fresnel = computeFresnel(material, lightDirection, viewDirection);
 
     // Lerping preserves the energy conservation of our BRDFs
-    return material.occlusion * mix(diffuseContribution, specularContribution, fresnel)
+    return pc.lightStrength * material.occlusion * mix(diffuseContribution, specularContribution, fresnel)
          * clamp(dot(material.normal, lightDirection), 0.0, 1.0);
+}
+
+float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, vec3 cameraPosition)
+{
+    if (!includeAO)
+    {
+        return 1.0;
+    }
+
+    float accumulatedOcclusion = 0;
+
+    const float distanceToCamera = distance(cameraPosition, occludee.position.xyz);
+    const vec2 uvSampleRadius = 1.0 / (pc.extent * distanceToCamera);
+
+    const mat2 sampleRotate = mat2(
+        0.707, -0.707,
+        0.707, 0.707
+    );
+
+    const vec2 sampleOffsets[4] = vec2[4](
+        vec2(-uvSampleRadius.x, 0), 
+        vec2(0, uvSampleRadius.y), 
+        vec2(uvSampleRadius.x, 0), 
+        vec2(0, -uvSampleRadius.y)
+    );
+
+    const float sampleCount = mix(64.0, 4.0, clamp((distanceToCamera - 0.1) / (100 - 0.1), 0.0, 1.0));
+    for(int s = 0; s < sampleCount; s++)
+    {
+        for(int i = 0; i < 4; i++)
+        {
+            const vec2 offset = sampleRotate * (sampleOffsets[i] * s * pc.aoScale);
+            const vec2 uv = gbufferUV + offset;
+            const vec3 occluderPosition = texture(gbuffer_WorldPosition, uv).xyz;
+        
+            // Avoid sampling gbuffer out of bounds
+            const vec2 uvMin = pc.offset / pc.gBufferCapacity;
+            const vec2 uvMax = (pc.offset + pc.extent) / pc.gBufferCapacity;
+            if (uv.x <= uvMin.x || uv.y <= uvMin.y || uv.x >= uvMax.x || uv.y >= uvMax.y)
+            {
+                continue;
+            }
+
+            if(texture(gbuffer_Diffuse, uv).a < 1.0)
+            {
+                continue;
+            }
+
+            const vec3 v = occluderPosition - occludee.position.xyz;
+            const float d = length(v);
+
+            // The sphere occluder subtends a solid angle from the perspective of the occludee
+            const float occluderSolidAngle = 6.28318530718 * (1.0 - d / sqrt(d * d + pc.occluderRadius * pc.occluderRadius));
+
+            // Normally we need to integrate the occluded light over all v towards the sphere, but we can assume v does not
+            // vary much so we multiply by a single attenuation factor.
+            const float occlusion = clamp(dot(occludee.normal.xyz, normalize(v)) - pc.occluderBias, 0.0, 1.0) * occluderSolidAngle;
+            accumulatedOcclusion += occlusion;
+        }
+    }
+
+    return clamp(1.0 - accumulatedOcclusion / 6.28318530718, 0.0, 1.0);
 }
 
 void main()
@@ -153,5 +228,8 @@ void main()
     const vec3 lightForward = normalize(pc.lightForward.xyz);
     const vec3 lightContribution = computeLightContribution(lightForward, material, viewDirection);
 
-    imageStore(image, texelCoord, vec4(lightContribution, 1.0));
+    const vec3 ambientContribution = vec3(pc.ambientStrength) * computeAmbientOcclusionAttenuation(gbufferTexel, gbufferUV, pc.cameraPosition.xyz);
+
+    const vec3 totalLight = lightContribution + ambientContribution;
+    imageStore(image, texelCoord, vec4(totalLight, 1.0));
 }

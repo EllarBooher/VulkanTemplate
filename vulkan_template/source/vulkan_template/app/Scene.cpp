@@ -5,9 +5,16 @@
 #include "vulkan_template/core/UIWindowScope.hpp"
 #include "vulkan_template/vulkan/Immediate.hpp"
 #include <functional>
+#include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtx/transform.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/matrix.hpp>
+#include <glm/trigonometric.hpp>
 #include <span>
 #include <utility>
 #include <vector>
@@ -24,9 +31,27 @@ auto vkt::Scene::cameraOrientation() const -> glm::quat
     return Z * X * Y;
 }
 
+auto vkt::Scene::cameraProjView(float const aspectRatio) const -> glm::mat4x4
+{
+    float const swappedNear{10'000.0F};
+    float const swappedFar{0.1F};
+
+    float const fovRadians{glm::radians(70.0F)};
+
+    // Use LH (opposite of our right handed) since we reverse depth
+    glm::mat4x4 const projection{
+        glm::perspectiveLH_ZO(fovRadians, aspectRatio, swappedNear, swappedFar)
+    };
+    glm::mat4x4 const view{glm::inverse(
+        glm::translate(cameraPosition) * glm::toMat4(cameraOrientation())
+    )};
+
+    return projection * view;
+}
+
 void vkt::Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
 {
-    char const* const WINDOW_TITLE{"Scene"};
+    char const* const WINDOW_TITLE{"Controls"};
 
     vkt::UIWindowScope const sceneViewport{
         vkt::UIWindowScope::beginDockable(WINDOW_TITLE, dockNode)
