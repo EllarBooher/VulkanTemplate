@@ -659,7 +659,7 @@ void GBufferPipeline::recordDraw(
             vkt::aspectRatio(renderTarget.size().extent).value()
         )};
 
-        MeshBuffers& meshBuffers{*scene.mesh->meshBuffers};
+        MeshBuffers& meshBuffers{*scene.mesh().meshBuffers};
 
         ::PushConstantVertex const vertexPushConstant{
             .vertexBuffer = meshBuffers.vertexAddress(),
@@ -682,7 +682,7 @@ void GBufferPipeline::recordDraw(
         );
 
         VkDeviceSize const instanceCount{scene.models->deviceSize()};
-        for (GeometrySurface const& surface : scene.mesh->surfaces)
+        for (GeometrySurface const& surface : scene.mesh().surfaces)
         {
             vkCmdDrawIndexed(
                 cmd, surface.indexCount, instanceCount, surface.firstIndex, 0, 0

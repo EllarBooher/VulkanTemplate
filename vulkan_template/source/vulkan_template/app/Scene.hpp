@@ -28,7 +28,6 @@ struct Scene
     [[nodiscard]] auto cameraOrientation() const -> glm::quat;
     [[nodiscard]] auto cameraProjView(float aspectRatio) const -> glm::mat4x4;
 
-    std::unique_ptr<Mesh> mesh;
     std::unique_ptr<TStagedBuffer<glm::mat4x4>> models{};
     std::unique_ptr<TStagedBuffer<glm::mat4x4>> modelInverseTransposes{};
 
@@ -41,8 +40,14 @@ struct Scene
     [[nodiscard]] auto camera() -> Camera&;
     [[nodiscard]] auto camera() const -> Camera const&;
 
+    void setMesh(std::unique_ptr<Mesh>);
+    [[nodiscard]] auto mesh() -> Mesh&;
+    [[nodiscard]] auto mesh() const -> Mesh const&;
+
 private:
     static Camera DEFAULT_CAMERA;
     Camera m_camera{DEFAULT_CAMERA};
+
+    std::unique_ptr<Mesh> m_mesh{};
 };
 } // namespace vkt

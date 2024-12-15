@@ -145,4 +145,7 @@ auto Scene::create(
 }
 auto Scene::camera() -> Camera& { return m_camera; }
 auto Scene::camera() const -> Camera const& { return m_camera; }
+void Scene::setMesh(std::unique_ptr<Mesh> mesh) { m_mesh = std::move(mesh); }
+auto Scene::mesh() -> Mesh& { return *m_mesh; }
+auto Scene::mesh() const -> Mesh const& { return *m_mesh; }
 } // namespace vkt

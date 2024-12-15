@@ -250,8 +250,8 @@ auto initialize() -> std::optional<Resources>
         VKT_ERROR("Faield to create scene.");
         return std::nullopt;
     }
-    sceneResult.value().mesh =
-        std::make_unique<vkt::Mesh>(std::move(meshes[0]));
+    sceneResult.value().setMesh(std::make_unique<vkt::Mesh>(std::move(meshes[0])
+    ));
 
     VKT_INFO("Successfully initialized Application resources.");
 
