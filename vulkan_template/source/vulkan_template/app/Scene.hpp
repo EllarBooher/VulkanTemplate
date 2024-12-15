@@ -23,13 +23,17 @@ struct Camera
     glm::vec3 axisAngles;
 };
 
+struct InstanceRenderingInfo
+{
+    VkDeviceSize instanceCount;
+    VkDeviceAddress models;
+    VkDeviceAddress modelInverseTransposes;
+};
+
 struct Scene
 {
     [[nodiscard]] auto cameraOrientation() const -> glm::quat;
     [[nodiscard]] auto cameraProjView(float aspectRatio) const -> glm::mat4x4;
-
-    std::unique_ptr<TStagedBuffer<glm::mat4x4>> models{};
-    std::unique_ptr<TStagedBuffer<glm::mat4x4>> modelInverseTransposes{};
 
     void controlsWindow(std::optional<ImGuiID> dockNode);
 
@@ -44,9 +48,14 @@ struct Scene
     [[nodiscard]] auto mesh() -> Mesh&;
     [[nodiscard]] auto mesh() const -> Mesh const&;
 
+    [[nodiscard]] auto instanceRenderingInfo() const -> InstanceRenderingInfo;
+
 private:
     static Camera DEFAULT_CAMERA;
     Camera m_camera{DEFAULT_CAMERA};
+
+    std::unique_ptr<TStagedBuffer<glm::mat4x4>> m_models{};
+    std::unique_ptr<TStagedBuffer<glm::mat4x4>> m_modelInverseTransposes{};
 
     std::unique_ptr<Mesh> m_mesh{};
 };

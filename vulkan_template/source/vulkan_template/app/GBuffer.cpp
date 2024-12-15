@@ -660,12 +660,14 @@ void GBufferPipeline::recordDraw(
         )};
 
         MeshBuffers& meshBuffers{*scene.mesh().meshBuffers};
+        InstanceRenderingInfo const sceneRenderInfo{scene.instanceRenderingInfo(
+        )};
 
         ::PushConstantVertex const vertexPushConstant{
             .vertexBuffer = meshBuffers.vertexAddress(),
-            .modelBuffer = scene.models->deviceAddress(),
+            .modelBuffer = sceneRenderInfo.models,
             .modelInverseTransposeBuffer =
-                scene.modelInverseTransposes->deviceAddress(),
+                sceneRenderInfo.modelInverseTransposes,
             .cameraProjView = scene.cameraProjView(aspectRatio),
         };
         vkCmdPushConstants(
@@ -681,7 +683,7 @@ void GBufferPipeline::recordDraw(
             cmd, meshBuffers.indexBuffer(), 0, VK_INDEX_TYPE_UINT32
         );
 
-        VkDeviceSize const instanceCount{scene.models->deviceSize()};
+        VkDeviceSize const instanceCount{sceneRenderInfo.instanceCount};
         for (GeometrySurface const& surface : scene.mesh().surfaces)
         {
             vkCmdDrawIndexed(

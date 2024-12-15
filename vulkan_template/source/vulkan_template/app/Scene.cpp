@@ -108,23 +108,28 @@ auto Scene::create(
 
     auto const bufferSize{static_cast<VkDeviceSize>(models.size())};
 
-    scene.models = std::make_unique<TStagedBuffer<glm::mat4x4>>(
+    scene.m_models = std::make_unique<TStagedBuffer<glm::mat4x4>>(
         TStagedBuffer<glm::mat4x4>::allocate(
             device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, allocator, bufferSize
         )
     );
-    scene.modelInverseTransposes = std::make_unique<TStagedBuffer<glm::mat4x4>>(
-        TStagedBuffer<glm::mat4x4>::allocate(
-            device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, allocator, bufferSize
-        )
-    );
+    scene.m_modelInverseTransposes =
+        std::make_unique<TStagedBuffer<glm::mat4x4>>(
+            TStagedBuffer<glm::mat4x4>::allocate(
+                device,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                allocator,
+                bufferSize
+            )
+        );
 
-    std::span<glm::mat4x4> const modelsMapped{scene.models->mapFullCapacity()};
-    std::span<glm::mat4x4> const modelInverseTransposesMapped{
-        scene.modelInverseTransposes->mapFullCapacity()
+    std::span<glm::mat4x4> const modelsMapped{scene.m_models->mapFullCapacity()
     };
-    scene.models->resizeStaged(bufferSize);
-    scene.modelInverseTransposes->resizeStaged(bufferSize);
+    std::span<glm::mat4x4> const modelInverseTransposesMapped{
+        scene.m_modelInverseTransposes->mapFullCapacity()
+    };
+    scene.m_models->resizeStaged(bufferSize);
+    scene.m_modelInverseTransposes->resizeStaged(bufferSize);
 
     for (size_t index{0}; index < models.size(); index++)
     {
@@ -136,8 +141,8 @@ auto Scene::create(
     modelUploadQueue.immediateSubmit(
         [&](VkCommandBuffer cmd)
     {
-        scene.models->recordCopyToDevice(cmd);
-        scene.modelInverseTransposes->recordCopyToDevice(cmd);
+        scene.m_models->recordCopyToDevice(cmd);
+        scene.m_modelInverseTransposes->recordCopyToDevice(cmd);
     }
     );
 
@@ -148,4 +153,16 @@ auto Scene::camera() const -> Camera const& { return m_camera; }
 void Scene::setMesh(std::unique_ptr<Mesh> mesh) { m_mesh = std::move(mesh); }
 auto Scene::mesh() -> Mesh& { return *m_mesh; }
 auto Scene::mesh() const -> Mesh const& { return *m_mesh; }
+auto Scene::instanceRenderingInfo() const -> InstanceRenderingInfo
+{
+    assert(
+        m_models->deviceSize() == m_modelInverseTransposes->deviceSize()
+        && "Model matrices desynced!"
+    );
+    return {
+        .instanceCount = m_models->deviceSize(),
+        .models = m_models->deviceAddress(),
+        .modelInverseTransposes = m_modelInverseTransposes->deviceAddress()
+    };
+}
 } // namespace vkt
