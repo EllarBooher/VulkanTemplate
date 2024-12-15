@@ -19,19 +19,31 @@
 #include <utility>
 #include <vector>
 
-auto vkt::Scene::cameraOrientation() const -> glm::quat
+namespace vkt
+{
+// NOLINTBEGIN(readability-magic-numbers)
+Camera Scene::DEFAULT_CAMERA{
+    .position = glm::vec3{0.0F, 0.0F, -5.0F},
+    .axisAngles = glm::vec3{0.0F},
+};
+// NOLINTEND(readability-magic-numbers)
+
+auto Scene::cameraOrientation() const -> glm::quat
 {
     // Apply Z (roll), then X (pitch), then Y (yaw)
-    auto const X{glm::angleAxis(cameraAxisAngles.x, glm::vec3{1.0F, 0.0F, 0.0F})
+    auto const X{
+        glm::angleAxis(m_camera.axisAngles.x, glm::vec3{1.0F, 0.0F, 0.0F})
     };
-    auto const Y{glm::angleAxis(cameraAxisAngles.y, glm::vec3{0.0F, 1.0F, 0.0F})
+    auto const Y{
+        glm::angleAxis(m_camera.axisAngles.y, glm::vec3{0.0F, 1.0F, 0.0F})
     };
-    auto const Z{glm::angleAxis(cameraAxisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F})
+    auto const Z{
+        glm::angleAxis(m_camera.axisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F})
     };
     return Z * X * Y;
 }
 
-auto vkt::Scene::cameraProjView(float const aspectRatio) const -> glm::mat4x4
+auto Scene::cameraProjView(float const aspectRatio) const -> glm::mat4x4
 {
     float const swappedNear{10'000.0F};
     float const swappedFar{0.1F};
@@ -43,13 +55,13 @@ auto vkt::Scene::cameraProjView(float const aspectRatio) const -> glm::mat4x4
         glm::perspectiveLH_ZO(fovRadians, aspectRatio, swappedNear, swappedFar)
     };
     glm::mat4x4 const view{glm::inverse(
-        glm::translate(cameraPosition) * glm::toMat4(cameraOrientation())
+        glm::translate(m_camera.position) * glm::toMat4(cameraOrientation())
     )};
 
     return projection * view;
 }
 
-void vkt::Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
+void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
 {
     char const* const WINDOW_TITLE{"Controls"};
 
@@ -67,7 +79,7 @@ void vkt::Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
     PropertyTable table{PropertyTable::begin()};
     table.rowVec3(
         "Camera Position",
-        cameraPosition,
+        m_camera.position,
         glm::vec3{0.0F},
         cameraPositionBehavior
     );
@@ -77,13 +89,13 @@ void vkt::Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
     };
 
     table.rowVec3(
-        "Camera Orientation", cameraAxisAngles, {}, axisAnglesBehavior
+        "Camera Orientation", m_camera.axisAngles, {}, axisAnglesBehavior
     );
 
     table.end();
 }
 
-auto vkt::Scene::create(
+auto Scene::create(
     VkDevice const device,
     VmaAllocator const allocator,
     ImmediateSubmissionQueue& modelUploadQueue
@@ -131,3 +143,6 @@ auto vkt::Scene::create(
 
     return sceneResult;
 }
+auto Scene::camera() -> Camera& { return m_camera; }
+auto Scene::camera() const -> Camera const& { return m_camera; }
+} // namespace vkt

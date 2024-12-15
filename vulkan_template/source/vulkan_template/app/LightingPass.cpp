@@ -294,7 +294,7 @@ void LightingPass::recordDraw(
                 static_cast<float>(gBufferCapacity.width),
                 static_cast<float>(gBufferCapacity.height)
             },
-        .cameraPosition = glm::vec4{scene.cameraPosition, 1.0F},
+        .cameraPosition = glm::vec4{scene.camera().position, 1.0F},
         .lightForward = lightForward,
         .cameraProjView = scene.cameraProjView(aspectRatio),
         .extent =

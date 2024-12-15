@@ -17,12 +17,14 @@ struct ImmediateSubmissionQueue;
 
 namespace vkt
 {
+struct Camera
+{
+    glm::vec3 position;
+    glm::vec3 axisAngles;
+};
+
 struct Scene
 {
-    // NOLINTNEXTLINE(readability-magic-numbers)
-    glm::vec3 cameraPosition{0.0F, 0.0F, -5.0F};
-    glm::vec3 cameraAxisAngles{};
-
     [[nodiscard]] auto cameraOrientation() const -> glm::quat;
     [[nodiscard]] auto cameraProjView(float aspectRatio) const -> glm::mat4x4;
 
@@ -35,5 +37,12 @@ struct Scene
     static auto
     create(VkDevice, VmaAllocator, ImmediateSubmissionQueue& modelUploadQueue)
         -> std::optional<Scene>;
+
+    [[nodiscard]] auto camera() -> Camera&;
+    [[nodiscard]] auto camera() const -> Camera const&;
+
+private:
+    static Camera DEFAULT_CAMERA;
+    Camera m_camera{DEFAULT_CAMERA};
 };
 } // namespace vkt
