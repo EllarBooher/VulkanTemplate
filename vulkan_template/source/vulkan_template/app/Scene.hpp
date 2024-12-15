@@ -17,7 +17,7 @@ struct ImmediateSubmissionQueue;
 
 namespace vkt
 {
-struct Camera
+struct Transform
 {
     glm::vec3 position;
     glm::vec3 axisAngles;
@@ -41,8 +41,8 @@ struct Scene
     create(VkDevice, VmaAllocator, ImmediateSubmissionQueue& modelUploadQueue)
         -> std::optional<Scene>;
 
-    [[nodiscard]] auto camera() -> Camera&;
-    [[nodiscard]] auto camera() const -> Camera const&;
+    [[nodiscard]] auto camera() -> Transform&;
+    [[nodiscard]] auto camera() const -> Transform const&;
 
     void setMesh(std::unique_ptr<Mesh>);
     [[nodiscard]] auto mesh() -> Mesh&;
@@ -51,8 +51,8 @@ struct Scene
     [[nodiscard]] auto instanceRenderingInfo() const -> InstanceRenderingInfo;
 
 private:
-    static Camera DEFAULT_CAMERA;
-    Camera m_camera{DEFAULT_CAMERA};
+    static Transform DEFAULT_CAMERA;
+    Transform m_camera{DEFAULT_CAMERA};
 
     std::unique_ptr<TStagedBuffer<glm::mat4x4>> m_models{};
     std::unique_ptr<TStagedBuffer<glm::mat4x4>> m_modelInverseTransposes{};

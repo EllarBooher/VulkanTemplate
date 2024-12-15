@@ -22,7 +22,7 @@
 namespace vkt
 {
 // NOLINTBEGIN(readability-magic-numbers)
-Camera Scene::DEFAULT_CAMERA{
+Transform Scene::DEFAULT_CAMERA{
     .position = glm::vec3{0.0F, 0.0F, -5.0F},
     .axisAngles = glm::vec3{0.0F},
 };
@@ -148,8 +148,8 @@ auto Scene::create(
 
     return sceneResult;
 }
-auto Scene::camera() -> Camera& { return m_camera; }
-auto Scene::camera() const -> Camera const& { return m_camera; }
+auto Scene::camera() -> Transform& { return m_camera; }
+auto Scene::camera() const -> Transform const& { return m_camera; }
 void Scene::setMesh(std::unique_ptr<Mesh> mesh) { m_mesh = std::move(mesh); }
 auto Scene::mesh() -> Mesh& { return *m_mesh; }
 auto Scene::mesh() const -> Mesh const& { return *m_mesh; }
