@@ -5,6 +5,7 @@
 #include <ShObjIdl.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
+#include <array>
 #include <combaseapi.h>
 #include <filesystem>
 #include <minwindef.h>
@@ -25,15 +26,14 @@ auto convertCharToWChar(std::string const& string)
 
     std::optional<std::wstring> result{};
 
-    wchar_t* buffer = new wchar_t[BUFFER_LENGTH];
+    std::array<wchar_t, BUFFER_LENGTH> buffer{};
     int32_t const charsWritten{MultiByteToWideChar(
-        CP_ACP, 0, string.c_str(), -1, buffer, BUFFER_LENGTH
+        CP_ACP, 0, string.c_str(), -1, buffer.data(), BUFFER_LENGTH
     )};
     if (charsWritten > 0)
     {
-        result = std::wstring{buffer, static_cast<size_t>(charsWritten)};
+        result = std::wstring{buffer.data(), static_cast<size_t>(charsWritten)};
     }
-    delete[] buffer;
     return result;
 }
 
