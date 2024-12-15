@@ -38,9 +38,7 @@ struct Scene
 
     void controlsWindow(std::optional<ImGuiID> dockNode);
 
-    static auto
-    create(VkDevice, VmaAllocator, ImmediateSubmissionQueue& modelUploadQueue)
-        -> std::optional<Scene>;
+    static auto create(VkDevice, VmaAllocator) -> std::optional<Scene>;
 
     [[nodiscard]] auto camera() -> Transform&;
     [[nodiscard]] auto camera() const -> Transform const&;

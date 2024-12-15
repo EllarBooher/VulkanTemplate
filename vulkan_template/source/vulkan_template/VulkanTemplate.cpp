@@ -243,7 +243,7 @@ auto initialize() -> std::optional<Resources>
     }
 
     std::optional<vkt::Scene> sceneResult{vkt::Scene::create(
-        graphicsContext.device(), graphicsContext.allocator(), submissionQueue
+        graphicsContext.device(), graphicsContext.allocator()
     )};
     if (!sceneResult.has_value())
     {

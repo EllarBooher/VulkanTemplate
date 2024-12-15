@@ -135,11 +135,8 @@ void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
     table.end();
 }
 
-auto Scene::create(
-    VkDevice const device,
-    VmaAllocator const allocator,
-    ImmediateSubmissionQueue& modelUploadQueue
-) -> std::optional<Scene>
+auto Scene::create(VkDevice const device, VmaAllocator const allocator)
+    -> std::optional<Scene>
 {
     std::optional<Scene> sceneResult{std::in_place};
     Scene& scene{sceneResult.value()};
