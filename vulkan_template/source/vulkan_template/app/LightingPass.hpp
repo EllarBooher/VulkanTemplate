@@ -7,6 +7,7 @@ namespace vkt
 {
 struct RenderTarget;
 struct GBuffer;
+struct Scene;
 } // namespace vkt
 
 namespace vkt
@@ -23,7 +24,8 @@ struct LightingPass
 
     static auto create(VkDevice) -> std::optional<LightingPass>;
 
-    void recordDraw(VkCommandBuffer, RenderTarget&, GBuffer const&);
+    void
+    recordDraw(VkCommandBuffer, RenderTarget&, GBuffer const&, Scene const&);
 
 private:
     LightingPass() = default;

@@ -16,7 +16,6 @@
 #include <cassert>
 #include <filesystem>
 #include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
@@ -491,10 +490,12 @@ void setRasterizationState(
     vkCmdSetColorBlendEnableEXT(cmd, 0, VKR_ARRAY(attachmentBlendEnabled));
 }
 
-auto cameraProjView(float const aspectRatio) -> glm::mat4x4
+auto cameraProjView(
+    glm::vec3 const translation,
+    glm::quat const orientation,
+    float const aspectRatio
+) -> glm::mat4x4
 {
-    glm::vec3 const translation{0.0F, 0.0F, -5.0F};
-    glm::quat const orientation{glm::identity<glm::quat>()};
     float const swappedNear{10'000.0F};
     float const swappedFar{0.1F};
 
@@ -686,7 +687,10 @@ void GBufferPipeline::recordDraw(
         auto const aspectRatio{static_cast<float>(
             vkt::aspectRatio(renderTarget.size().extent).value()
         )};
-        glm::mat4x4 const cameraProjView{::cameraProjView(aspectRatio)};
+
+        glm::mat4x4 const cameraProjView{::cameraProjView(
+            scene.cameraPosition, scene.cameraOrientation(), aspectRatio
+        )};
 
         MeshBuffers& meshBuffers{*scene.mesh->meshBuffers};
 

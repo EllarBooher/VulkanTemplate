@@ -1,13 +1,62 @@
 #include "Scene.hpp"
 
+#include "vulkan_template/app/PropertyTable.hpp"
 #include "vulkan_template/core/Integer.hpp"
+#include "vulkan_template/core/UIWindowScope.hpp"
 #include "vulkan_template/vulkan/Immediate.hpp"
 #include <functional>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <span>
 #include <utility>
 #include <vector>
+
+auto vkt::Scene::cameraOrientation() const -> glm::quat
+{
+    // Apply Z (roll), then X (pitch), then Y (yaw)
+    auto const X{glm::angleAxis(cameraAxisAngles.x, glm::vec3{1.0F, 0.0F, 0.0F})
+    };
+    auto const Y{glm::angleAxis(cameraAxisAngles.y, glm::vec3{0.0F, 1.0F, 0.0F})
+    };
+    auto const Z{glm::angleAxis(cameraAxisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F})
+    };
+    return Z * X * Y;
+}
+
+void vkt::Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
+{
+    char const* const WINDOW_TITLE{"Scene"};
+
+    vkt::UIWindowScope const sceneViewport{
+        vkt::UIWindowScope::beginDockable(WINDOW_TITLE, dockNode)
+    };
+
+    if (!sceneViewport.isOpen())
+    {
+        return;
+    }
+
+    PropertySliderBehavior const cameraPositionBehavior{.speed = 0.1F};
+
+    PropertyTable table{PropertyTable::begin()};
+    table.rowVec3(
+        "Camera Position",
+        cameraPosition,
+        glm::vec3{0.0F},
+        cameraPositionBehavior
+    );
+
+    PropertySliderBehavior const axisAnglesBehavior{
+        .bounds = FloatBounds{.min = -glm::pi<float>(), .max = glm::pi<float>()}
+    };
+
+    table.rowVec3(
+        "Camera Orientation", cameraAxisAngles, {}, axisAnglesBehavior
+    );
+
+    table.end();
+}
 
 auto vkt::Scene::create(
     VkDevice const device,

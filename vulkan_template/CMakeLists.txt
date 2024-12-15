@@ -17,6 +17,7 @@ add_library(
 	"source/vulkan_template/app/RenderTarget.cpp"
 	"source/vulkan_template/app/Renderer.cpp"
 	"source/vulkan_template/app/PostProcess.cpp" 
+	"source/vulkan_template/app/PropertyTable.cpp"
 	"source/vulkan_template/app/Mesh.cpp" 
 	"source/vulkan_template/app/GBuffer.cpp"
 	"source/vulkan_template/app/Scene.cpp"

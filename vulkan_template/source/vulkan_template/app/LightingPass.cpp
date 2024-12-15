@@ -2,6 +2,7 @@
 
 #include "vulkan_template/app/GBuffer.hpp"
 #include "vulkan_template/app/RenderTarget.hpp"
+#include "vulkan_template/app/Scene.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/Image.hpp"
@@ -145,7 +146,10 @@ auto LightingPass::create(VkDevice const device) -> std::optional<LightingPass>
     return lightingPassResult;
 }
 void LightingPass::recordDraw(
-    VkCommandBuffer const cmd, RenderTarget& texture, GBuffer const& gbuffer
+    VkCommandBuffer const cmd,
+    RenderTarget& texture,
+    GBuffer const& gbuffer,
+    Scene const& scene
 )
 {
     assert(
@@ -194,7 +198,7 @@ void LightingPass::recordDraw(
                 static_cast<float>(gBufferCapacity.width),
                 static_cast<float>(gBufferCapacity.height)
             },
-        .cameraPosition = glm::vec4{0.0F, 0.0F, -5.0F, 1.0F},
+        .cameraPosition = glm::vec4{scene.cameraPosition, 1.0F},
         .lightForward = glm::vec4{0.3F, 1.0F, 0.3F, 0.0F},
     };
 

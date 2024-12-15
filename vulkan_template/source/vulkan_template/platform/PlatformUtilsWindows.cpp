@@ -1,19 +1,23 @@
 #include "PlatformUtils.hpp"
 
-#include "vulkan_template/core/Log.hpp"
 #include <GLFW/glfw3.h> // IWYU pragma: keep
-#include <ShObjIdl.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
+
+#include "vulkan_template/core/Integer.hpp"
+#include "vulkan_template/core/Log.hpp"
+#include <ShObjIdl.h>
 #include <array>
 #include <combaseapi.h>
 #include <filesystem>
 #include <minwindef.h>
 #include <objbase.h>
 #include <optional>
+#include <stringapiset.h>
 #include <vector>
 #include <windef.h>
 #include <winerror.h>
+#include <winnls.h>
 #include <winscard.h>
 #include <wtypesbase.h>
 

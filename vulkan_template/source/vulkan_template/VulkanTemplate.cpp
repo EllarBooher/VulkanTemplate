@@ -310,6 +310,8 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
         std::optional<vkt::SceneViewport> sceneViewport{uiLayer.sceneViewport()
         };
 
+        scene.controlsWindow(dockingLayout.right);
+
         if (sceneViewport.has_value())
         {
             // renderer.recordDraw(
@@ -319,7 +321,7 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
                 cmd, sceneViewport.value().texture, gbuffer, scene
             );
             lightingPass.recordDraw(
-                cmd, sceneViewport.value().texture, gbuffer
+                cmd, sceneViewport.value().texture, gbuffer, scene
             );
         }
 
