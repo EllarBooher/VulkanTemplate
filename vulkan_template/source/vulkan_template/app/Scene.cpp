@@ -36,8 +36,11 @@ namespace vkt
 Transform Scene::DEFAULT_CAMERA{
     .position = glm::vec3{0.0F, 0.0F, -5.0F},
     .axisAngles = glm::vec3{0.0F},
+    .scale = glm::vec3{1.0F},
 };
-Transform Scene::DEFAULT_MESH_INSTANCE{};
+Transform Scene::DEFAULT_MESH_INSTANCE{
+    .scale = glm::vec3{1.0F},
+};
 // NOLINTEND(readability-magic-numbers)
 
 auto Scene::cameraOrientation() const -> glm::quat
@@ -58,6 +61,7 @@ auto Scene::cameraProjView(float const aspectRatio) const -> glm::mat4x4
     };
     glm::mat4x4 const view{glm::inverse(
         glm::translate(m_camera.position) * glm::toMat4(cameraOrientation())
+        * glm::scale(m_camera.scale)
     )};
 
     return projection * view;
@@ -80,6 +84,14 @@ void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
     PropertySliderBehavior const AXIS_ANGLES_BEHAVIOR{
         .bounds = FloatBounds{.min = -glm::pi<float>(), .max = glm::pi<float>()}
     };
+    PropertySliderBehavior const SCALE_BEHAVIOR{
+        .speed = 1.0F,
+        .bounds = FloatBounds{.min = 0.0},
+    };
+    PropertySliderBehavior const SCALE_ALL_BEHAVIOR{
+        .speed = 0.1F,
+        .bounds = FloatBounds{.min = 0.9, .max = 1.1},
+    };
 
     PropertyTable table{PropertyTable::begin()};
     table.rowVec3(
@@ -94,6 +106,9 @@ void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
         DEFAULT_CAMERA.axisAngles,
         AXIS_ANGLES_BEHAVIOR
     );
+    table.rowVec3(
+        "Camera Scale", m_camera.scale, DEFAULT_CAMERA.scale, SCALE_BEHAVIOR
+    );
 
     table.rowVec3(
         "Mesh Position",
@@ -107,6 +122,15 @@ void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
         DEFAULT_MESH_INSTANCE.axisAngles,
         AXIS_ANGLES_BEHAVIOR
     );
+    table.rowVec3(
+        "Mesh Scale",
+        m_meshInstance.scale,
+        DEFAULT_MESH_INSTANCE.scale,
+        SCALE_BEHAVIOR
+    );
+    float scaleAll{1.0F};
+    table.rowFloat("Mesh Scale All", scaleAll, 1.0F, SCALE_ALL_BEHAVIOR);
+    m_meshInstance.scale *= scaleAll;
 
     table.end();
 }
@@ -155,6 +179,7 @@ void Scene::prepare(VkCommandBuffer const cmd)
     std::vector<glm::mat4x4> const models{
         glm::translate(m_meshInstance.position)
         * glm::toMat4(::axisAngleOrientation(m_meshInstance.axisAngles))
+        * glm::scale(m_meshInstance.scale)
     };
 
     std::span<glm::mat4x4> const modelsMapped{m_models->mapFullCapacity()};
