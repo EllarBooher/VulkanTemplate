@@ -50,9 +50,14 @@ struct Scene
 
     [[nodiscard]] auto instanceRenderingInfo() const -> InstanceRenderingInfo;
 
+    void prepare(VkCommandBuffer);
+
 private:
     static Transform DEFAULT_CAMERA;
+    static Transform DEFAULT_MESH_INSTANCE;
+
     Transform m_camera{DEFAULT_CAMERA};
+    Transform m_meshInstance{DEFAULT_MESH_INSTANCE};
 
     std::unique_ptr<TStagedBuffer<glm::mat4x4>> m_models{};
     std::unique_ptr<TStagedBuffer<glm::mat4x4>> m_modelInverseTransposes{};

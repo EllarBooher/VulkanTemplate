@@ -19,6 +19,17 @@
 #include <utility>
 #include <vector>
 
+namespace
+{
+auto axisAngleOrientation(glm::vec3 const axisAngle) -> glm::quat
+{ // Apply Z (roll), then X (pitch), then Y (yaw)
+    auto const X{glm::angleAxis(axisAngle.x, glm::vec3{1.0F, 0.0F, 0.0F})};
+    auto const Y{glm::angleAxis(axisAngle.y, glm::vec3{0.0F, 1.0F, 0.0F})};
+    auto const Z{glm::angleAxis(axisAngle.z, glm::vec3{0.0F, 0.0F, 1.0F})};
+    return Z * X * Y;
+}
+} // namespace
+
 namespace vkt
 {
 // NOLINTBEGIN(readability-magic-numbers)
@@ -26,21 +37,12 @@ Transform Scene::DEFAULT_CAMERA{
     .position = glm::vec3{0.0F, 0.0F, -5.0F},
     .axisAngles = glm::vec3{0.0F},
 };
+Transform Scene::DEFAULT_MESH_INSTANCE{};
 // NOLINTEND(readability-magic-numbers)
 
 auto Scene::cameraOrientation() const -> glm::quat
 {
-    // Apply Z (roll), then X (pitch), then Y (yaw)
-    auto const X{
-        glm::angleAxis(m_camera.axisAngles.x, glm::vec3{1.0F, 0.0F, 0.0F})
-    };
-    auto const Y{
-        glm::angleAxis(m_camera.axisAngles.y, glm::vec3{0.0F, 1.0F, 0.0F})
-    };
-    auto const Z{
-        glm::angleAxis(m_camera.axisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F})
-    };
-    return Z * X * Y;
+    return ::axisAngleOrientation(m_camera.axisAngles);
 }
 
 auto Scene::cameraProjView(float const aspectRatio) const -> glm::mat4x4
@@ -74,22 +76,36 @@ void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
         return;
     }
 
-    PropertySliderBehavior const cameraPositionBehavior{.speed = 0.1F};
+    PropertySliderBehavior constexpr POSITION_BEHAVIOR{.speed = 0.1F};
+    PropertySliderBehavior const AXIS_ANGLES_BEHAVIOR{
+        .bounds = FloatBounds{.min = -glm::pi<float>(), .max = glm::pi<float>()}
+    };
 
     PropertyTable table{PropertyTable::begin()};
     table.rowVec3(
         "Camera Position",
         m_camera.position,
-        glm::vec3{0.0F},
-        cameraPositionBehavior
+        DEFAULT_CAMERA.position,
+        POSITION_BEHAVIOR
+    );
+    table.rowVec3(
+        "Camera Orientation",
+        m_camera.axisAngles,
+        DEFAULT_CAMERA.axisAngles,
+        AXIS_ANGLES_BEHAVIOR
     );
 
-    PropertySliderBehavior const axisAnglesBehavior{
-        .bounds = FloatBounds{.min = -glm::pi<float>(), .max = glm::pi<float>()}
-    };
-
     table.rowVec3(
-        "Camera Orientation", m_camera.axisAngles, {}, axisAnglesBehavior
+        "Mesh Position",
+        m_meshInstance.position,
+        DEFAULT_MESH_INSTANCE.position,
+        POSITION_BEHAVIOR
+    );
+    table.rowVec3(
+        "Mesh Orientation",
+        m_meshInstance.axisAngles,
+        DEFAULT_MESH_INSTANCE.axisAngles,
+        AXIS_ANGLES_BEHAVIOR
     );
 
     table.end();
@@ -104,48 +120,17 @@ auto Scene::create(
     std::optional<Scene> sceneResult{std::in_place};
     Scene& scene{sceneResult.value()};
 
-    std::vector<glm::mat4x4> const models{glm::identity<glm::mat4x4>()};
-
-    auto const bufferSize{static_cast<VkDeviceSize>(models.size())};
-
     scene.m_models = std::make_unique<TStagedBuffer<glm::mat4x4>>(
         TStagedBuffer<glm::mat4x4>::allocate(
-            device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, allocator, bufferSize
+            device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, allocator, 1
         )
     );
     scene.m_modelInverseTransposes =
         std::make_unique<TStagedBuffer<glm::mat4x4>>(
             TStagedBuffer<glm::mat4x4>::allocate(
-                device,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                allocator,
-                bufferSize
+                device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, allocator, 1
             )
         );
-
-    std::span<glm::mat4x4> const modelsMapped{scene.m_models->mapFullCapacity()
-    };
-    std::span<glm::mat4x4> const modelInverseTransposesMapped{
-        scene.m_modelInverseTransposes->mapFullCapacity()
-    };
-    scene.m_models->resizeStaged(bufferSize);
-    scene.m_modelInverseTransposes->resizeStaged(bufferSize);
-
-    for (size_t index{0}; index < models.size(); index++)
-    {
-        modelsMapped[index] = models[index];
-        modelInverseTransposesMapped[index] =
-            glm::inverseTranspose(models[index]);
-    }
-
-    modelUploadQueue.immediateSubmit(
-        [&](VkCommandBuffer cmd)
-    {
-        scene.m_models->recordCopyToDevice(cmd);
-        scene.m_modelInverseTransposes->recordCopyToDevice(cmd);
-    }
-    );
-
     return sceneResult;
 }
 auto Scene::camera() -> Transform& { return m_camera; }
@@ -164,5 +149,43 @@ auto Scene::instanceRenderingInfo() const -> InstanceRenderingInfo
         .models = m_models->deviceAddress(),
         .modelInverseTransposes = m_modelInverseTransposes->deviceAddress()
     };
+}
+void Scene::prepare(VkCommandBuffer const cmd)
+{
+    std::vector<glm::mat4x4> const models{
+        glm::translate(m_meshInstance.position)
+        * glm::toMat4(::axisAngleOrientation(m_meshInstance.axisAngles))
+    };
+
+    std::span<glm::mat4x4> const modelsMapped{m_models->mapFullCapacity()};
+    std::span<glm::mat4x4> const modelInverseTransposesMapped{
+        m_modelInverseTransposes->mapFullCapacity()
+    };
+
+    auto const bufferSize{static_cast<VkDeviceSize>(models.size())};
+
+    m_models->resizeStaged(bufferSize);
+    m_modelInverseTransposes->resizeStaged(bufferSize);
+
+    for (size_t index{0}; index < models.size(); index++)
+    {
+        modelsMapped[index] = models[index];
+        modelInverseTransposesMapped[index] =
+            glm::inverseTranspose(models[index]);
+    }
+
+    m_models->recordCopyToDevice(cmd);
+    m_modelInverseTransposes->recordCopyToDevice(cmd);
+
+    m_models->recordTotalCopyBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+    );
+    m_modelInverseTransposes->recordTotalCopyBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+    );
 }
 } // namespace vkt

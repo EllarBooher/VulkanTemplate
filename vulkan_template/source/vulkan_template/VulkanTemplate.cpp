@@ -315,6 +315,7 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
 
         if (sceneViewport.has_value())
         {
+            scene.prepare(cmd);
             // renderer.recordDraw(
             //     cmd, sceneViewport.value().texture, resources.meshes[0]
             //);
