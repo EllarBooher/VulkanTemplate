@@ -12,11 +12,6 @@
 
 namespace vkt
 {
-struct ImmediateSubmissionQueue;
-} // namespace vkt
-
-namespace vkt
-{
 struct Transform
 {
     glm::vec3 position;

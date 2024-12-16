@@ -3,10 +3,8 @@
 #include "vulkan_template/app/PropertyTable.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/UIWindowScope.hpp"
-#include "vulkan_template/vulkan/Immediate.hpp"
-#include <functional>
+#include <cassert>
 #include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>

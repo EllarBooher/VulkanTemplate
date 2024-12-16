@@ -6,7 +6,6 @@
 #include "vulkan_template/app/Scene.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
-#include "vulkan_template/vulkan/Buffers.hpp"
 #include "vulkan_template/vulkan/Image.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"
 #include "vulkan_template/vulkan/ImageView.hpp"
@@ -524,7 +523,9 @@ auto GBufferPipeline::create(
     std::filesystem::path const fragmentPath{"shaders/deferred/gbuffer.frag.spv"
     };
 
-    std::vector<VkDescriptorSetLayout> const layouts{};
+    std::vector<VkDescriptorSetLayout> const layouts{
+        Mesh::allocateMaterialDescriptorLayout(device).value()
+    };
     std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
@@ -686,6 +687,16 @@ void GBufferPipeline::recordDraw(
         VkDeviceSize const instanceCount{sceneRenderInfo.instanceCount};
         for (GeometrySurface const& surface : scene.mesh().surfaces)
         {
+            vkCmdBindDescriptorSets(
+                cmd,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_graphicsLayout,
+                0,
+                1,
+                &surface.material.descriptor,
+                VKR_ARRAY_NONE
+            );
+
             vkCmdDrawIndexed(
                 cmd, surface.indexCount, instanceCount, surface.firstIndex, 0, 0
             );

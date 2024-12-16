@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vulkan_template/app/DescriptorAllocator.hpp"
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/Buffers.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
@@ -14,6 +15,7 @@
 namespace vkt
 {
 struct ImmediateSubmissionQueue;
+struct ImageView;
 } // namespace vkt
 
 namespace vkt
@@ -66,10 +68,18 @@ private:
     std::unique_ptr<AllocatedBuffer> m_vertexBuffer;
 };
 
+struct MaterialMaps
+{
+    std::shared_ptr<ImageView> color{};
+    std::shared_ptr<ImageView> normal{};
+    VkDescriptorSet descriptor{VK_NULL_HANDLE};
+};
+
 struct GeometrySurface
 {
     uint32_t firstIndex;
     uint32_t indexCount;
+    MaterialMaps material;
 };
 
 struct Mesh
@@ -81,7 +91,21 @@ struct Mesh
         std::filesystem::path const& path
     ) -> std::vector<Mesh>;
 
+    static auto allocateMaterialDescriptorLayout(VkDevice)
+        -> std::optional<VkDescriptorSetLayout>;
+
     std::vector<GeometrySurface> surfaces{};
     std::unique_ptr<MeshBuffers> meshBuffers{};
+
+    // TODO: memory management
+
+    // All material maps use the same sampler.
+    // CANNOT use immutable sampler, since the layout above is statically
+    // allocated.
+    // Using an immutable sampler would mean the layouts are not identically
+    // defined and thus the set will not be compatible.
+    VkSampler materialSampler{VK_NULL_HANDLE};
+    VkDescriptorSetLayout materialLayout{VK_NULL_HANDLE};
+    std::unique_ptr<DescriptorAllocator> materialAllocator{};
 };
 } // namespace vkt

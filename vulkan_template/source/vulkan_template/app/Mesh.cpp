@@ -2,23 +2,53 @@
 
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
+#include "vulkan_template/vulkan/Image.hpp"
+#include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/Immediate.hpp"
+#include "vulkan_template/vulkan/VulkanMacros.hpp"
+#include "vulkan_template/vulkan/VulkanStructs.hpp"
+#include <algorithm>
 #include <cassert>
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp> // IWYU pragma: keep
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
+#include <limits>
+#include <span>
 #include <spdlog/fmt/bundled/core.h>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
 
 namespace
 {
-namespace detail_fastgltf
+struct RGBATexel
 {
+    uint8_t r{0};
+    uint8_t g{0};
+    uint8_t b{0};
+    uint8_t a{std::numeric_limits<uint8_t>::max()};
+
+    static uint8_t constexpr SATURATED_COMPONENT{255U};
+};
+
+struct ImageRGBA
+{
+    uint32_t x{0};
+    uint32_t y{0};
+    std::vector<uint8_t> bytes{};
+};
+
 auto ensureAbsolutePath(
     std::filesystem::path const& path,
     std::filesystem::path const& root = std::filesystem::current_path()
@@ -30,6 +60,611 @@ auto ensureAbsolutePath(
     }
 
     return root / path;
+}
+} // namespace
+
+namespace
+{
+auto uploadImageToGPU(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::ImmediateSubmissionQueue const& submissionQueue,
+    VkFormat const format,
+    VkImageUsageFlags const additionalFlags,
+    ImageRGBA const& image
+) -> std::optional<std::unique_ptr<vkt::Image>>
+{
+    VkExtent2D const imageExtent{.width = image.x, .height = image.y};
+
+    std::optional<std::unique_ptr<vkt::Image>> stagingImageResult{
+        vkt::Image::allocate(
+            device,
+            allocator,
+            vkt::ImageAllocationParameters{
+                .extent = imageExtent,
+                .format = format,
+                .usageFlags = VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+                .tiling = VK_IMAGE_TILING_LINEAR,
+                .vmaUsage = VMA_MEMORY_USAGE_CPU_ONLY,
+                .vmaFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            }
+        )
+    };
+    if (!stagingImageResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate staging image.");
+        return std::nullopt;
+    }
+    vkt::Image& stagingImage{*stagingImageResult.value()};
+
+    std::optional<VmaAllocationInfo> const allocationInfo{
+        stagingImage.fetchAllocationInfo()
+    };
+
+    if (allocationInfo.has_value()
+        && allocationInfo.value().pMappedData != nullptr)
+    {
+        auto* const stagingImageData{
+            reinterpret_cast<uint8_t*>(allocationInfo.value().pMappedData)
+        };
+
+        std::copy(image.bytes.begin(), image.bytes.end(), stagingImageData);
+    }
+    else
+    {
+        VKT_ERROR("Failed to map bytes of staging image.");
+        return std::nullopt;
+    }
+
+    std::optional<std::unique_ptr<vkt::Image>> finalImageResult{
+        vkt::Image::allocate(
+            device,
+            allocator,
+            vkt::ImageAllocationParameters{
+                .extent = imageExtent,
+                .format = format,
+                .usageFlags = VK_IMAGE_USAGE_SAMPLED_BIT
+                            | VK_IMAGE_USAGE_TRANSFER_DST_BIT | additionalFlags,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .tiling = VK_IMAGE_TILING_OPTIMAL
+            }
+        )
+    };
+    if (!finalImageResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate final image.");
+        return std::nullopt;
+    }
+    vkt::Image& finalImage{*finalImageResult.value()};
+
+    if (auto const submissionResult{submissionQueue.immediateSubmit(
+            [&](VkCommandBuffer const cmd)
+    {
+        stagingImage.recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
+        );
+
+        finalImage.recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
+        );
+
+        vkt::Image::recordCopyEntire(
+            cmd, stagingImage, finalImage, VK_IMAGE_ASPECT_COLOR_BIT
+        );
+    }
+        )};
+        submissionResult
+        != vkt::ImmediateSubmissionQueue::SubmissionResult::SUCCESS)
+    {
+        VKT_ERROR("Failed to copy images.");
+        return std::nullopt;
+    }
+
+    return std::move(finalImageResult).value();
+}
+
+auto uploadTextureToGPU(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::ImmediateSubmissionQueue const& submissionQueue,
+    VkFormat const format,
+    ImageRGBA const& image
+) -> std::optional<vkt::ImageView>
+{
+    // TODO: add more formats and a way to generally check if a format is
+    // reasonable. Also support copying 32 bit -> any image format.
+    if (format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_R8G8B8A8_SRGB)
+    {
+        VKT_WARNING(
+            "Uploading texture to device as possibly unsupported format '{}'- "
+            "images are loaded onto the CPU as 32 bit RGBA.",
+            string_VkFormat(format)
+        );
+    }
+
+    std::optional<std::unique_ptr<vkt::Image>> uploadResult{uploadImageToGPU(
+        device,
+        allocator,
+        submissionQueue,
+        format,
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        image
+    )};
+    if (!uploadResult.has_value())
+    {
+        VKT_ERROR("Failed to upload image to GPU.");
+        return std::nullopt;
+    }
+    std::optional<std::unique_ptr<vkt::ImageView>> imageViewResult{
+        vkt::ImageView::allocate(
+            device,
+            allocator,
+            std::move(*uploadResult.value()),
+            vkt::ImageViewAllocationParameters{}
+        )
+    };
+    if (!imageViewResult.has_value() || imageViewResult.value() == nullptr)
+    {
+        VKT_ERROR("Failed to convert image into imageview.");
+        return std::nullopt;
+    }
+
+    return std::move(*imageViewResult.value());
+}
+
+namespace detail_stbi
+{
+auto loadRGBA(std::span<uint8_t const> const bytes) -> std::optional<ImageRGBA>
+{
+    int32_t x{0};
+    int32_t y{0};
+
+    int32_t components{0};
+    uint16_t constexpr RGBA_COMPONENT_COUNT{4};
+
+    stbi_uc* const parsedImage{stbi_load_from_memory(
+        bytes.data(),
+        static_cast<int32_t>(bytes.size()),
+        &x,
+        &y,
+        &components,
+        RGBA_COMPONENT_COUNT
+    )};
+
+    if (parsedImage == nullptr)
+    {
+        VKT_ERROR("stbi: Failed to convert image.");
+        return std::nullopt;
+    }
+
+    if (x < 1 || y < 1)
+    {
+        VKT_ERROR(fmt::format(
+            "stbi: Parsed image had invalid dimensions: ({},{})", x, y
+        ));
+        return std::nullopt;
+    }
+
+    auto widthPixels{static_cast<uint32_t>(x)};
+    auto heightPixels{static_cast<uint32_t>(y)};
+    size_t constexpr BYTES_PER_COMPONENT{1};
+    size_t constexpr BYTES_PER_PIXEL{
+        RGBA_COMPONENT_COUNT * BYTES_PER_COMPONENT
+    };
+    std::vector<uint8_t> const rgba{
+        parsedImage,
+        parsedImage
+            + static_cast<size_t>(widthPixels * heightPixels) * BYTES_PER_PIXEL
+    };
+
+    stbi_image_free(parsedImage);
+
+    return ImageRGBA{.x = widthPixels, .y = heightPixels, .bytes = rgba};
+}
+} // namespace detail_stbi
+
+namespace detail_fastgltf
+{
+// glTF material texture indices organized into our engine's format
+struct MaterialTextureIndices
+{
+    std::optional<size_t> color{};
+    std::optional<size_t> normal{};
+};
+
+enum class MapTypes
+{
+    Color,
+    Normal
+};
+auto string_MapTypes(MapTypes const mapType)
+{
+    switch (mapType)
+    {
+    case MapTypes::Color:
+        return "color";
+    case MapTypes::Normal:
+        return "normal";
+    }
+}
+
+// Preserves glTF indexing.
+auto getTextureSources(
+    std::span<fastgltf::Texture const> const textures,
+    std::span<fastgltf::Image const> const images
+) -> std::vector<std::optional<std::reference_wrapper<fastgltf::Image const>>>
+{
+    std::vector<std::optional<std::reference_wrapper<fastgltf::Image const>>>
+        textureSourcesByGLTFIndex{};
+    textureSourcesByGLTFIndex.reserve(textures.size());
+    for (fastgltf::Texture const& texture : textures)
+    {
+        textureSourcesByGLTFIndex.emplace_back(std::nullopt);
+        auto& sourceImage{textureSourcesByGLTFIndex.back()};
+
+        if (!texture.imageIndex.has_value())
+        {
+            VKT_WARNING("Texture {} was missing imageIndex.", texture.name);
+            continue;
+        }
+
+        size_t const loadedIndex{texture.imageIndex.value()};
+
+        if (loadedIndex >= textures.size())
+        {
+            VKT_WARNING(
+                "Texture {} had imageIndex that was out of bounds.",
+                texture.name
+            );
+            continue;
+        }
+
+        sourceImage = images[loadedIndex];
+    }
+
+    return textureSourcesByGLTFIndex;
+}
+
+auto convertGLTFImageToRGBA(
+    fastgltf::DataSource const& source,
+    std::filesystem::path const& assetRoot,
+    std::optional<std::reference_wrapper<fastgltf::BufferView const>> const
+        view,
+    std::span<fastgltf::Buffer const> const buffers,
+    std::span<fastgltf::BufferView const> const bufferViews
+) -> std::optional<ImageRGBA>
+{
+    std::optional<ImageRGBA> result{std::nullopt};
+
+    if (view.has_value())
+    {
+        assert(view.value().get().byteLength > 0);
+    }
+
+    if (std::holds_alternative<fastgltf::sources::Array>(source))
+    {
+        std::span<uint8_t const> data{
+            std::get<fastgltf::sources::Array>(source).bytes
+        };
+        if (view.has_value()
+            && view.value().get().byteLength + view.value().get().byteOffset
+                   > data.size())
+        {
+            VKT_ERROR("Not enough bytes in glTF source for specified view.");
+            return std::nullopt;
+        }
+        if (view.has_value())
+        {
+            data = {
+                data.data() + view.value().get().byteOffset,
+                view.value().get().byteLength
+            };
+        }
+
+        std::optional<ImageRGBA> imageConvertResult{detail_stbi::loadRGBA(data)
+        };
+
+        if (imageConvertResult.has_value())
+        {
+            result = std::move(imageConvertResult.value());
+        }
+    }
+    else if (std::holds_alternative<fastgltf::sources::URI>(source))
+    {
+        fastgltf::sources::URI const& uri{
+            std::get<fastgltf::sources::URI>(source)
+        };
+
+        // These asserts should be loosened as we support a larger subset of
+        // glTF.
+        assert(uri.fileByteOffset == 0);
+        assert(uri.uri.isLocalPath());
+
+        std::filesystem::path const path{assetRoot / uri.uri.fspath()};
+
+        std::ifstream file(path, std::ios::binary);
+
+        if (!std::filesystem::is_regular_file(path))
+        {
+            VKT_WARNING(
+                "glTF image source URI does not result in a valid file path. "
+                "URI was: {}. Full path is: {}",
+                uri.uri.string(),
+                path.string()
+            );
+            return std::nullopt;
+        }
+
+        size_t const fileSize{std::filesystem::file_size(path)};
+
+        size_t byteOffset{0};
+        size_t byteLength{fileSize};
+
+        if (view.has_value())
+        {
+            byteOffset = view.value().get().byteOffset;
+            byteLength = view.value().get().byteLength;
+        }
+
+        if (byteOffset + byteLength > fileSize)
+        {
+            VKT_ERROR("Not enough bytes in file sourced from glTF URI.");
+            return std::nullopt;
+        }
+
+        std::vector<uint8_t> data(byteLength);
+        file.ignore(static_cast<std::streamsize>(byteOffset));
+        file.read(
+            reinterpret_cast<char*>(data.data()),
+            static_cast<std::streamsize>(byteLength)
+        );
+
+        // Throw the file to stbi and hope for the best, it should detect the
+        // file headers properly
+
+        std::optional<ImageRGBA> imageConvertResult{detail_stbi::loadRGBA(data)
+        };
+
+        if (imageConvertResult.has_value())
+        {
+            result = std::move(imageConvertResult.value());
+        }
+    }
+    else if (std::holds_alternative<fastgltf::sources::BufferView>(source))
+    {
+        // buffer views cannot view buffer views
+        assert(!view.has_value());
+
+        size_t const bufferViewIndex =
+            std::get<fastgltf::sources::BufferView>(source).bufferViewIndex;
+
+        fastgltf::BufferView const& bufferView{bufferViews[bufferViewIndex]};
+
+        assert(!bufferView.byteStride.has_value());
+        assert(bufferView.meshoptCompression == nullptr);
+        assert(!bufferView.target.has_value());
+
+        size_t const bufferIndex{bufferView.bufferIndex};
+
+        fastgltf::Buffer const& buffer{buffers[bufferIndex]};
+
+        return convertGLTFImageToRGBA(
+            buffer.data, assetRoot, bufferView, buffers, bufferViews
+        );
+    }
+    else
+    {
+        VKT_WARNING("Unsupported glTF image source found.");
+        return std::nullopt;
+    }
+
+    if (!result.has_value())
+    {
+        VKT_WARNING("Failed to load image from glTF.");
+        return std::nullopt;
+    }
+
+    return result;
+}
+
+// Preserves gltf indexing. Returns a vector whose size matches the count of
+// materials passed in.
+auto parseMaterialIndices(fastgltf::Material const& material)
+    -> MaterialTextureIndices
+{
+    MaterialTextureIndices indices{};
+
+    {
+        std::optional<fastgltf::TextureInfo> const& color{
+            material.pbrData.baseColorTexture
+        };
+        if (!color.has_value())
+        {
+            VKT_WARNING("Material {}: Missing color texture.", material.name);
+        }
+        else
+        {
+            indices.color = color.value().textureIndex;
+        }
+    }
+
+    {
+        std::optional<fastgltf::NormalTextureInfo> const& normal{
+            material.normalTexture
+        };
+        if (!normal.has_value())
+        {
+            VKT_WARNING("Material {}: Missing normal texture.", material.name);
+        }
+        else
+        {
+            indices.normal = normal.value().textureIndex;
+        }
+    }
+
+    return indices;
+}
+
+auto accessTexture(
+    std::span<std::optional<std::reference_wrapper<fastgltf::Image const>>>
+        textureSourcesByGLTFIndex,
+    size_t const textureIndex
+) -> std::optional<std::reference_wrapper<fastgltf::Image const>>
+{
+    if (textureIndex >= textureSourcesByGLTFIndex.size())
+    {
+        VKT_WARNING("Out of bounds texture index.");
+        return std::nullopt;
+    }
+
+    if (!textureSourcesByGLTFIndex[textureIndex].has_value())
+    {
+        VKT_WARNING("Texture index source was not loaded.");
+        return std::nullopt;
+    }
+
+    return textureSourcesByGLTFIndex[textureIndex].value().get();
+}
+
+auto uploadTextureFromIndex(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::ImmediateSubmissionQueue const& submissionQueue,
+    std::span<std::optional<std::reference_wrapper<fastgltf::Image const>>>
+        textureSourcesByGLTFIndex,
+    size_t const textureIndex,
+    std::filesystem::path const& assetRoot,
+    std::span<fastgltf::Buffer const> const buffers,
+    std::span<fastgltf::BufferView const> const bufferViews,
+    MapTypes const mapType
+) -> std::optional<vkt::ImageView>
+{
+    std::optional<std::reference_wrapper<fastgltf::Image const>> textureResult{
+        accessTexture(textureSourcesByGLTFIndex, textureIndex)
+    };
+    if (!textureResult.has_value())
+    {
+        return std::nullopt;
+    }
+
+    std::optional<ImageRGBA> convertResult{convertGLTFImageToRGBA(
+        textureResult.value().get().data,
+        assetRoot,
+        std::nullopt,
+        buffers,
+        bufferViews
+    )};
+    if (!convertResult.has_value())
+    {
+        return std::nullopt;
+    }
+
+    VkFormat fileFormat{};
+    switch (mapType)
+    {
+    case MapTypes::Color:
+        fileFormat = VK_FORMAT_R8G8B8A8_SRGB;
+        break;
+    case MapTypes::Normal:
+        fileFormat = VK_FORMAT_R8G8B8A8_UNORM;
+        break;
+    }
+
+    return uploadTextureToGPU(
+        device, allocator, submissionQueue, fileFormat, convertResult.value()
+    );
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+auto uploadMaterialDataAsAssets(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::ImmediateSubmissionQueue const& submissionQueue,
+    vkt::MaterialMaps const& fallbackMaterialData,
+    fastgltf::Asset const& gltf,
+    std::filesystem::path const& assetRoot
+) -> std::vector<vkt::MaterialMaps>
+{
+    // Follow texture.imageIndex -> image indirection by one step
+    std::vector<std::optional<std::reference_wrapper<fastgltf::Image const>>>
+        textureSourcesByGLTFIndex{
+            detail_fastgltf::getTextureSources(gltf.textures, gltf.images)
+        };
+
+    std::vector<vkt::MaterialMaps> materialDataByGLTFIndex{};
+    materialDataByGLTFIndex.reserve(gltf.materials.size());
+    for (fastgltf::Material const& material : gltf.materials)
+    {
+        materialDataByGLTFIndex.push_back(fallbackMaterialData);
+        vkt::MaterialMaps& materialMaps{materialDataByGLTFIndex.back()};
+
+        detail_fastgltf::MaterialTextureIndices materialTextures{
+            parseMaterialIndices(material)
+        };
+
+        if (materialTextures.color.has_value())
+        {
+            if (std::optional<vkt::ImageView> textureLoadResult{
+                    uploadTextureFromIndex(
+                        device,
+                        allocator,
+                        submissionQueue,
+                        textureSourcesByGLTFIndex,
+                        materialTextures.color.value(),
+                        assetRoot,
+                        gltf.buffers,
+                        gltf.bufferViews,
+                        MapTypes::Color
+                    )
+                };
+                !textureLoadResult.has_value())
+            {
+                VKT_WARNING(
+                    "Material {}: Failed to upload color texture.",
+                    material.name
+                );
+            }
+            else
+            {
+                materialMaps.color = std::make_unique<vkt::ImageView>(
+                    std::move(textureLoadResult).value()
+                );
+            }
+        }
+
+        if (materialTextures.normal.has_value())
+        {
+            if (std::optional<vkt::ImageView> textureLoadResult{
+                    uploadTextureFromIndex(
+                        device,
+                        allocator,
+                        submissionQueue,
+                        textureSourcesByGLTFIndex,
+                        materialTextures.normal.value(),
+                        assetRoot,
+                        gltf.buffers,
+                        gltf.bufferViews,
+                        MapTypes::Normal
+                    )
+                };
+                !textureLoadResult.has_value())
+            {
+                VKT_WARNING(
+                    "Material {}: Failed to upload normal texture.",
+                    material.name
+                );
+            }
+            else
+            {
+                materialMaps.normal = std::make_unique<vkt::ImageView>(
+                    std::move(textureLoadResult).value()
+                );
+            }
+        }
+    }
+
+    return materialDataByGLTFIndex;
 }
 
 auto loadGLTFAsset(std::filesystem::path const& path)
@@ -70,9 +705,22 @@ auto loadMeshes(
     VkDevice const device,
     VmaAllocator const allocator,
     vkt::ImmediateSubmissionQueue const& submissionQueue,
-    fastgltf::Asset const& gltf
+    vkt::MaterialMaps const& defaultMaterialData,
+    fastgltf::Asset const& gltf,
+    std::filesystem::path const& assetRoot
 ) -> std::vector<vkt::Mesh>
 {
+    std::vector<vkt::MaterialMaps> materialByGLTFIndex{
+        detail_fastgltf::uploadMaterialDataAsAssets(
+            device,
+            allocator,
+            submissionQueue,
+            defaultMaterialData,
+            gltf,
+            assetRoot
+        )
+    };
+
     std::vector<vkt::Mesh> newMeshes{};
     newMeshes.reserve(gltf.meshes.size());
     for (fastgltf::Mesh const& mesh : gltf.meshes)
@@ -114,6 +762,29 @@ auto loadMeshes(
                 .indexCount = 0,
             });
             vkt::GeometrySurface& surface{surfaces.back()};
+
+            if (!primitive.materialIndex.has_value())
+            {
+                VKT_WARNING(
+                    "Mesh {} has a primitive that is missing material "
+                    "index.",
+                    mesh.name
+                );
+            }
+            else if (size_t const materialIndex{primitive.materialIndex.value()
+                     };
+                     materialIndex >= materialByGLTFIndex.size())
+            {
+                VKT_WARNING(
+                    "Mesh {} has a primitive with out of bounds material "
+                    "index.",
+                    mesh.name
+                );
+            }
+            else
+            {
+                surface.material = materialByGLTFIndex[materialIndex];
+            }
 
             if (!primitive.materialIndex.has_value())
             {
@@ -252,6 +923,69 @@ auto loadMeshes(
             }
         }
 
+        std::vector<vkt::DescriptorAllocator::PoolSizeRatio> const
+            materialPoolRatios{
+                {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                 .ratio = 1.0F}
+            };
+        newMesh.materialAllocator = std::make_unique<vkt::DescriptorAllocator>(
+            vkt::DescriptorAllocator::create(
+                device, newMesh.surfaces.size(), materialPoolRatios, (VkFlags)0
+            )
+        );
+        newMesh.materialLayout =
+            vkt::Mesh::allocateMaterialDescriptorLayout(device).value();
+
+        VkSamplerCreateInfo const samplerInfo{vkt::samplerCreateInfo(
+            static_cast<VkFlags>(0),
+            VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
+            VK_FILTER_LINEAR,
+            VK_SAMPLER_ADDRESS_MODE_REPEAT
+        )};
+
+        // Assert since failing would mean leaking a descriptor set
+        VKT_CHECK_VK(vkCreateSampler(
+            device, &samplerInfo, nullptr, &newMesh.materialSampler
+        ));
+
+        for (auto& surface : newMesh.surfaces)
+        {
+            surface.material.descriptor = newMesh.materialAllocator->allocate(
+                device, newMesh.materialLayout
+            );
+
+            std::vector<VkDescriptorImageInfo> bindings{
+                VkDescriptorImageInfo{
+                    .sampler = newMesh.materialSampler,
+                    .imageView = surface.material.color->view(),
+                    .imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                },
+                VkDescriptorImageInfo{
+                    .sampler = newMesh.materialSampler,
+                    .imageView = surface.material.normal->view(),
+                    .imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                }
+            };
+            VkWriteDescriptorSet const write{
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+
+                .dstSet = surface.material.descriptor,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = static_cast<uint32_t>(bindings.size()),
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+
+                .pImageInfo = bindings.data(),
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr,
+            };
+
+            std::vector<VkWriteDescriptorSet> writes{write};
+
+            vkUpdateDescriptorSets(device, VKR_ARRAY(writes), VKR_ARRAY_NONE);
+        }
+
         newMeshes.push_back(std::move(newMesh));
     }
 
@@ -379,12 +1113,123 @@ auto Mesh::fromPath(
     }
     fastgltf::Asset const& gltf{gltfLoadResult.get()};
 
-    std::vector<Mesh> newMeshes{
-        detail_fastgltf::loadMeshes(device, allocator, submissionQueue, gltf)
+    MaterialMaps defaultMaterial{};
+
+    size_t constexpr DEFAULT_IMAGE_DIMENSIONS{64ULL};
+
+    ImageRGBA defaultImage{
+        .x = DEFAULT_IMAGE_DIMENSIONS,
+        .y = DEFAULT_IMAGE_DIMENSIONS,
+        .bytes = std::vector<uint8_t>{}
     };
+    defaultImage.bytes.resize(
+        static_cast<size_t>(defaultImage.x)
+        * static_cast<size_t>(defaultImage.y) * sizeof(RGBATexel)
+    );
+
+    {
+        // Default color texture is a grey checkerboard
+
+        size_t index{0};
+        for (RGBATexel& texel : std::span<RGBATexel>{
+                 reinterpret_cast<RGBATexel*>(defaultImage.bytes.data()),
+                 defaultImage.bytes.size() / sizeof(RGBATexel)
+             })
+        {
+            size_t const x{index % defaultImage.x};
+            size_t const y{index / defaultImage.x};
+
+            RGBATexel constexpr LIGHT_GREY{
+                .r = 200U, .g = 200U, .b = 200U, .a = 255U
+            };
+            RGBATexel constexpr DARK_GREY{
+                .r = 100U, .g = 100U, .b = 100U, .a = 255U
+            };
+
+            bool const lightSquare{((x / 4) + (y / 4)) % 2 == 0};
+
+            texel = lightSquare ? LIGHT_GREY : DARK_GREY;
+
+            index++;
+        }
+
+        defaultMaterial.color =
+            std::make_shared<vkt::ImageView>(::uploadTextureToGPU(
+                                                 device,
+                                                 allocator,
+                                                 submissionQueue,
+                                                 VK_FORMAT_R8G8B8A8_UNORM,
+                                                 defaultImage
+            )
+                                                 .value());
+    }
+    {
+        // Default normal texture
+
+        for (RGBATexel& texel : std::span<RGBATexel>{
+                 reinterpret_cast<RGBATexel*>(defaultImage.bytes.data()),
+                 defaultImage.bytes.size() / sizeof(RGBATexel)
+             })
+        {
+            // Signed normal of (0,0,1) stored as unsigned (0.5,0.5,1.0)
+            RGBATexel constexpr DEFAULT_NORMAL{
+                .r = 127U, .g = 127U, .b = 255U, .a = 0U
+            };
+
+            texel = DEFAULT_NORMAL;
+        }
+
+        defaultMaterial.normal =
+            std::make_shared<vkt::ImageView>(::uploadTextureToGPU(
+                                                 device,
+                                                 allocator,
+                                                 submissionQueue,
+                                                 VK_FORMAT_R8G8B8A8_UNORM,
+                                                 defaultImage
+            )
+                                                 .value());
+    }
+
+    std::vector<Mesh> newMeshes{detail_fastgltf::loadMeshes(
+        device,
+        allocator,
+        submissionQueue,
+        defaultMaterial,
+        gltf,
+        path.parent_path()
+    )};
 
     VKT_INFO("Loaded {} meshes from glTF", newMeshes.size());
 
     return newMeshes;
+}
+auto Mesh::allocateMaterialDescriptorLayout(VkDevice const device)
+    -> std::optional<VkDescriptorSetLayout>
+{
+    // Color & normal
+    auto const layoutResult{
+        DescriptorLayoutBuilder{}
+            .pushBinding(DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .stageMask =
+                    VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                .bindingFlags = 0,
+            })
+            .pushBinding(DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .stageMask =
+                    VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                .bindingFlags = 0,
+            })
+            .build(device, 0)
+    };
+
+    if (!layoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate material descriptor layout.");
+        return std::nullopt;
+    }
+
+    return layoutResult.value();
 }
 } // namespace vkt

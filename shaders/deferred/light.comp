@@ -228,7 +228,7 @@ void main()
     const vec3 lightForward = normalize(pc.lightForward.xyz);
     const vec3 lightContribution = computeLightContribution(lightForward, material, viewDirection);
 
-    const vec3 ambientContribution = vec3(pc.ambientStrength) * computeAmbientOcclusionAttenuation(gbufferTexel, gbufferUV, pc.cameraPosition.xyz);
+    const vec3 ambientContribution = vec3(pc.ambientStrength) * material.subscatteringColor * computeAmbientOcclusionAttenuation(gbufferTexel, gbufferUV, pc.cameraPosition.xyz);
 
     const vec3 totalLight = lightContribution + ambientContribution;
     imageStore(image, texelCoord, vec4(totalLight, 1.0));
