@@ -793,6 +793,8 @@ auto loadMeshes(
                     "index.",
                     mesh.name
                 );
+
+                surface.material = defaultMaterialData;
             }
 
             size_t const initialVertexIndex{vertices.size()};
