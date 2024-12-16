@@ -888,6 +888,38 @@ auto loadMeshes(
         {
             continue;
         }
+
+        bool constexpr CONVERT_FROM_GLTF_COORDS{true};
+
+        // We use glTF/Vulkan standard CCW front-face winding
+        bool constexpr REVERSE_WINDING{false};
+
+        if (CONVERT_FROM_GLTF_COORDS)
+        {
+            // glTF: +Y up, +Z forward, -X right
+            // us: -Y up, +Z forward, +X right
+            // Both right handed, but we need to rotate by flipping Y and X
+
+            for (vkt::VertexPacked& vertex : vertices)
+            {
+                vertex.normal.y *= -1;
+                vertex.normal.x *= -1;
+                vertex.position.y *= -1;
+                vertex.position.x *= -1;
+            }
+        }
+        if (REVERSE_WINDING)
+        {
+            assert(indices.size() % 3 == 0);
+            for (size_t triIndex{0}; triIndex < indices.size() / 3; triIndex++)
+            {
+                // Engine uses left-handed winding, while glTF uses right-handed
+                // We just flipped two axes, so we need to flip the triangle
+                // winding too
+                std::swap(indices[triIndex * 3 + 1], indices[triIndex * 3 + 2]);
+            }
+        }
+
         if (auto uploadResult{vkt::MeshBuffers::uploadMeshData(
                 device, allocator, submissionQueue, indices, vertices
             )};
@@ -901,28 +933,6 @@ auto loadMeshes(
         {
             VKT_ERROR("Failed to upload vertices/indices.");
             continue;
-        }
-
-        bool constexpr CONVERT_FROM_GLTF_COORDS{true};
-
-        if (CONVERT_FROM_GLTF_COORDS)
-        {
-            for (vkt::VertexPacked& vertex : vertices)
-            {
-                // Flip y to point y axis up, and flip x to preserve handedness
-                vertex.normal.x *= -1;
-                vertex.normal.y *= -1;
-                vertex.position.x *= -1;
-                vertex.position.y *= -1;
-            }
-            assert(indices.size() % 3 == 0);
-            for (size_t triIndex{0}; triIndex < indices.size() / 3; triIndex++)
-            {
-                // Engine uses left-handed winding, while glTF uses right-handed
-                // We just flipped two axes, so we need to flip the triangle
-                // winding too
-                std::swap(indices[triIndex * 3 + 1], indices[triIndex * 3 + 2]);
-            }
         }
 
         std::vector<vkt::DescriptorAllocator::PoolSizeRatio> const
