@@ -219,15 +219,17 @@ auto GBuffer::operator=(GBuffer&& other) -> GBuffer&
 {
     m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
 
+    m_size = std::exchange(other.m_size, VkRect2D{});
+
     m_textures = std::exchange(other.m_textures, {});
 
-    m_immutableSamplers = std::move(other.m_immutableSamplers);
+    m_immutableSamplers = std::exchange(other.m_immutableSamplers, {});
 
     m_descriptorLayout =
         std::exchange(other.m_descriptorLayout, VK_NULL_HANDLE);
     m_descriptors = std::exchange(other.m_descriptors, VK_NULL_HANDLE);
 
-    m_descriptorAllocator = std::move(other.m_descriptorAllocator);
+    m_descriptorAllocator = std::exchange(other.m_descriptorAllocator, nullptr);
 
     return *this;
 }
@@ -491,6 +493,8 @@ auto GBufferPipeline::operator=(GBufferPipeline&& other) -> GBufferPipeline&
     m_fragmentStage = std::exchange(other.m_fragmentStage, VK_NULL_HANDLE);
     m_vertexStage = std::exchange(other.m_vertexStage, VK_NULL_HANDLE);
 
+    m_gbufferDescriptorLayout =
+        std::exchange(other.m_gbufferDescriptorLayout, VK_NULL_HANDLE);
     m_graphicsLayout = std::exchange(other.m_graphicsLayout, VK_NULL_HANDLE);
 
     m_creationArguments = std::exchange(other.m_creationArguments, {});
@@ -506,6 +510,9 @@ GBufferPipeline::~GBufferPipeline()
     if (m_device != VK_NULL_HANDLE)
     {
         vkDestroyPipelineLayout(m_device, m_graphicsLayout, nullptr);
+        vkDestroyDescriptorSetLayout(
+            m_device, m_gbufferDescriptorLayout, nullptr
+        );
         vkDestroyShaderEXT(m_device, m_vertexStage, nullptr);
         vkDestroyShaderEXT(m_device, m_fragmentStage, nullptr);
     }
@@ -523,8 +530,19 @@ auto GBufferPipeline::create(
     std::filesystem::path const fragmentPath{"shaders/deferred/gbuffer.frag.spv"
     };
 
+    auto gbufferDescriptorLayoutResult{
+        MaterialDescriptorPool::allocateMaterialDescriptorLayout(device)
+    };
+    if (!gbufferDescriptorLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocator GBuffer descriptor set layout for "
+                  "GBuffer Pipeline.");
+        return std::nullopt;
+    }
+    pipeline.m_gbufferDescriptorLayout = gbufferDescriptorLayoutResult.value();
+
     std::vector<VkDescriptorSetLayout> const layouts{
-        Mesh::allocateMaterialDescriptorLayout(device).value()
+        pipeline.m_gbufferDescriptorLayout
     };
     std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,

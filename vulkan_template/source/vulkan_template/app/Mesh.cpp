@@ -555,6 +555,7 @@ auto loadMeshes(
     VkDevice const device,
     VmaAllocator const allocator,
     vkt::ImmediateSubmissionQueue const& submissionQueue,
+    vkt::MaterialDescriptorPool& materialPool,
     vkt::MaterialMaps const& defaultMaterialData,
     fastgltf::Asset const& gltf,
     std::filesystem::path const& assetRoot
@@ -785,67 +786,9 @@ auto loadMeshes(
             continue;
         }
 
-        std::vector<vkt::DescriptorAllocator::PoolSizeRatio> const
-            materialPoolRatios{
-                {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                 .ratio = 1.0F}
-            };
-        newMesh.materialAllocator = std::make_unique<vkt::DescriptorAllocator>(
-            vkt::DescriptorAllocator::create(
-                device, newMesh.surfaces.size(), materialPoolRatios, (VkFlags)0
-            )
-        );
-        newMesh.materialLayout =
-            vkt::Mesh::allocateMaterialDescriptorLayout(device).value();
-
-        VkSamplerCreateInfo const samplerInfo{vkt::samplerCreateInfo(
-            static_cast<VkFlags>(0),
-            VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
-            VK_FILTER_LINEAR,
-            VK_SAMPLER_ADDRESS_MODE_REPEAT
-        )};
-
-        // Assert since failing would mean leaking a descriptor set
-        VKT_CHECK_VK(vkCreateSampler(
-            device, &samplerInfo, nullptr, &newMesh.materialSampler
-        ));
-
         for (auto& surface : newMesh.surfaces)
         {
-            surface.material.descriptor = newMesh.materialAllocator->allocate(
-                device, newMesh.materialLayout
-            );
-
-            std::vector<VkDescriptorImageInfo> bindings{
-                VkDescriptorImageInfo{
-                    .sampler = newMesh.materialSampler,
-                    .imageView = surface.material.color->view(),
-                    .imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-                },
-                VkDescriptorImageInfo{
-                    .sampler = newMesh.materialSampler,
-                    .imageView = surface.material.normal->view(),
-                    .imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-                }
-            };
-            VkWriteDescriptorSet const write{
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .pNext = nullptr,
-
-                .dstSet = surface.material.descriptor,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = static_cast<uint32_t>(bindings.size()),
-                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-
-                .pImageInfo = bindings.data(),
-                .pBufferInfo = nullptr,
-                .pTexelBufferView = nullptr,
-            };
-
-            std::vector<VkWriteDescriptorSet> writes{write};
-
-            vkUpdateDescriptorSets(device, VKR_ARRAY(writes), VKR_ARRAY_NONE);
+            materialPool.fillMaterial(surface.material);
         }
 
         newMeshes.push_back(std::move(newMesh));
@@ -956,6 +899,7 @@ auto Mesh::fromPath(
     VkDevice const device,
     VmaAllocator const allocator,
     ImmediateSubmissionQueue const& submissionQueue,
+    MaterialDescriptorPool& materialPool,
     std::filesystem::path const& path
 ) -> std::vector<Mesh>
 {
@@ -1052,6 +996,7 @@ auto Mesh::fromPath(
         device,
         allocator,
         submissionQueue,
+        materialPool,
         defaultMaterial,
         gltf,
         path.parent_path()
@@ -1061,8 +1006,111 @@ auto Mesh::fromPath(
 
     return newMeshes;
 }
-auto Mesh::allocateMaterialDescriptorLayout(VkDevice const device)
-    -> std::optional<VkDescriptorSetLayout>
+
+auto MaterialDescriptorPool::operator=(MaterialDescriptorPool&& other) noexcept
+{
+    device = std::exchange(other.device, VK_NULL_HANDLE);
+    materialSampler = std::exchange(other.materialSampler, VK_NULL_HANDLE);
+    materialLayout = std::exchange(other.materialLayout, VK_NULL_HANDLE);
+
+    materialAllocator = std::exchange(other.materialAllocator, nullptr);
+}
+
+MaterialDescriptorPool::MaterialDescriptorPool(MaterialDescriptorPool&& other
+) noexcept
+{
+    *this = std::move(other);
+}
+
+auto MaterialDescriptorPool::create(VkDevice const device)
+    -> std::optional<MaterialDescriptorPool>
+{
+    std::optional<MaterialDescriptorPool> poolResult{
+        std::in_place, MaterialDescriptorPool{}
+    };
+    MaterialDescriptorPool& pool{poolResult.value()};
+    pool.device = device;
+
+    // Max number of unique surfaces on meshes this pool will be able to support
+    uint32_t constexpr MAX_SETS{100};
+    std::vector<vkt::DescriptorAllocator::PoolSizeRatio> const
+        materialPoolRatios{
+            {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .ratio = 1.0F}
+        };
+    pool.materialAllocator = std::make_unique<vkt::DescriptorAllocator>(
+        vkt::DescriptorAllocator::create(
+            device, MAX_SETS, materialPoolRatios, (VkFlags)0
+        )
+    );
+    auto layoutResult{allocateMaterialDescriptorLayout(device)};
+    if (!layoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate Material descriptor set layout.");
+        return std::nullopt;
+    }
+    pool.materialLayout = layoutResult.value();
+
+    VkSamplerCreateInfo const samplerInfo{vkt::samplerCreateInfo(
+        static_cast<VkFlags>(0),
+        VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
+        VK_FILTER_LINEAR,
+        VK_SAMPLER_ADDRESS_MODE_REPEAT
+    )};
+
+    // Assert since failing would mean leaking a descriptor set
+    VKT_TRY_VK(
+        vkCreateSampler(device, &samplerInfo, nullptr, &pool.materialSampler),
+        "Failed to allocate Material sampler.",
+        std::nullopt
+    );
+
+    return poolResult;
+}
+
+void MaterialDescriptorPool::fillMaterial(MaterialMaps& material)
+{
+    assert(
+        material.descriptor == VK_NULL_HANDLE
+        && "Material already has descriptor"
+    );
+
+    material.descriptor = materialAllocator->allocate(device, materialLayout);
+
+    std::vector<VkDescriptorImageInfo> bindings{
+        VkDescriptorImageInfo{
+            .sampler = materialSampler,
+            .imageView = material.color->view(),
+            .imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+        },
+        VkDescriptorImageInfo{
+            .sampler = materialSampler,
+            .imageView = material.normal->view(),
+            .imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+        }
+    };
+    VkWriteDescriptorSet const write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
+
+        .dstSet = material.descriptor,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = static_cast<uint32_t>(bindings.size()),
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+
+        .pImageInfo = bindings.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+
+    std::vector<VkWriteDescriptorSet> writes{write};
+
+    vkUpdateDescriptorSets(device, VKR_ARRAY(writes), VKR_ARRAY_NONE);
+}
+
+auto MaterialDescriptorPool::allocateMaterialDescriptorLayout(
+    VkDevice const device
+) -> std::optional<VkDescriptorSetLayout>
 {
     // Color & normal
     auto const layoutResult{
@@ -1089,5 +1137,14 @@ auto Mesh::allocateMaterialDescriptorLayout(VkDevice const device)
     }
 
     return layoutResult.value();
+}
+MaterialDescriptorPool::~MaterialDescriptorPool()
+{
+    if (device != VK_NULL_HANDLE)
+    {
+        materialAllocator.reset();
+        vkDestroyDescriptorSetLayout(device, materialLayout, nullptr);
+        vkDestroySampler(device, materialSampler, nullptr);
+    }
 }
 } // namespace vkt

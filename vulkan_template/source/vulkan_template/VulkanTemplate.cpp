@@ -37,6 +37,7 @@ struct Resources
     vkt::PlatformWindow window;
     vkt::GraphicsContext graphics;
     vkt::ImmediateSubmissionQueue submissionQueue;
+    vkt::MaterialDescriptorPool materialPool;
     vkt::Swapchain swapchain;
     vkt::FrameBuffer frameBuffer;
     vkt::UILayer uiLayer;
@@ -98,6 +99,17 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
     vkt::ImmediateSubmissionQueue& submissionQueue{queueResult.value()};
+
+    VKT_INFO("Creating Material Descriptor Pool...");
+
+    std::optional<vkt::MaterialDescriptorPool> materialPoolResult{
+        vkt::MaterialDescriptorPool::create(graphicsContext.device())
+    };
+    if (!materialPoolResult.has_value())
+    {
+        VKT_ERROR("Failed to create material descriptor pool.");
+        return std::nullopt;
+    }
 
     VKT_INFO("Creating Swapchain...");
 
@@ -234,6 +246,7 @@ auto initialize() -> std::optional<Resources>
         graphicsContext.device(),
         graphicsContext.allocator(),
         submissionQueue,
+        materialPoolResult.value(),
         meshPathResult.value()
     )};
     if (meshes.empty())
@@ -259,6 +272,7 @@ auto initialize() -> std::optional<Resources>
         .window = std::move(windowResult).value(),
         .graphics = std::move(graphicsResult).value(),
         .submissionQueue = std::move(queueResult).value(),
+        .materialPool = std::move(materialPoolResult).value(),
         .swapchain = std::move(swapchainResult).value(),
         .frameBuffer = std::move(frameBufferResult).value(),
         .uiLayer = std::move(uiLayerResult).value(),

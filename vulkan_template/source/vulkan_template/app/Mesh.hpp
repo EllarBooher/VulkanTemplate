@@ -82,30 +82,48 @@ struct GeometrySurface
     MaterialMaps material;
 };
 
+struct MaterialDescriptorPool
+{
+    auto operator=(MaterialDescriptorPool const&) = delete;
+    MaterialDescriptorPool(MaterialDescriptorPool const&) = delete;
+
+    auto operator=(MaterialDescriptorPool&&) noexcept;
+    MaterialDescriptorPool(MaterialDescriptorPool&&) noexcept;
+
+    static auto create(VkDevice) -> std::optional<MaterialDescriptorPool>;
+    void fillMaterial(MaterialMaps&);
+
+    static auto allocateMaterialDescriptorLayout(VkDevice)
+        -> std::optional<VkDescriptorSetLayout>;
+
+    ~MaterialDescriptorPool();
+
+private:
+    MaterialDescriptorPool() = default;
+
+    VkDevice device{VK_NULL_HANDLE};
+
+    // All material maps use the same sampler.
+    // CANNOT use immutable sampler, since the layout above is statically
+    // allocated.
+    // Using an immutable sampler would mean the layouts are not identically
+    // defined with pipelines and thus the set will not be compatible.
+    VkSampler materialSampler{VK_NULL_HANDLE};
+    VkDescriptorSetLayout materialLayout{VK_NULL_HANDLE};
+    std::unique_ptr<DescriptorAllocator> materialAllocator{};
+};
+
 struct Mesh
 {
     static auto fromPath(
         VkDevice,
         VmaAllocator,
         ImmediateSubmissionQueue const&,
+        MaterialDescriptorPool&,
         std::filesystem::path const& path
     ) -> std::vector<Mesh>;
 
-    static auto allocateMaterialDescriptorLayout(VkDevice)
-        -> std::optional<VkDescriptorSetLayout>;
-
     std::vector<GeometrySurface> surfaces{};
     std::unique_ptr<MeshBuffers> meshBuffers{};
-
-    // TODO: memory management
-
-    // All material maps use the same sampler.
-    // CANNOT use immutable sampler, since the layout above is statically
-    // allocated.
-    // Using an immutable sampler would mean the layouts are not identically
-    // defined and thus the set will not be compatible.
-    VkSampler materialSampler{VK_NULL_HANDLE};
-    VkDescriptorSetLayout materialLayout{VK_NULL_HANDLE};
-    std::unique_ptr<DescriptorAllocator> materialAllocator{};
 };
 } // namespace vkt

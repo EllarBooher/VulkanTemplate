@@ -125,6 +125,7 @@ public:
 private:
     VkDevice m_device;
 
+    VkDescriptorSetLayout m_gbufferDescriptorLayout{VK_NULL_HANDLE};
     VkPipelineLayout m_graphicsLayout{VK_NULL_HANDLE};
 
     VkShaderEXT m_vertexStage{VK_NULL_HANDLE};
