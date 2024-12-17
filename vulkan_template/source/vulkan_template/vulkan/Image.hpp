@@ -47,9 +47,9 @@ struct RGBATexel
 
 struct ImageRGBA
 {
-    uint32_t x{0};
-    uint32_t y{0};
-    std::vector<uint8_t> bytes{};
+    uint32_t width{0};
+    uint32_t height{0};
+    std::vector<RGBATexel> texels{};
 };
 
 struct Image

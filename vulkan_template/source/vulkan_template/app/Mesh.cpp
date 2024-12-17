@@ -80,21 +80,30 @@ auto loadRGBA(std::span<uint8_t const> const bytes)
         return std::nullopt;
     }
 
-    auto widthPixels{static_cast<uint32_t>(x)};
-    auto heightPixels{static_cast<uint32_t>(y)};
-    size_t constexpr BYTES_PER_COMPONENT{1};
-    size_t constexpr BYTES_PER_PIXEL{
-        RGBA_COMPONENT_COUNT * BYTES_PER_COMPONENT
-    };
-    std::vector<uint8_t> const rgba{
+    assert(x > 0 && y > 0);
+
+    uint32_t const width = static_cast<uint32_t>(x);
+    uint32_t const height = static_cast<uint32_t>(y);
+    std::vector<vkt::RGBATexel> texels{};
+    texels.resize(static_cast<size_t>(width) * height);
+    std::copy(
         parsedImage,
-        parsedImage
-            + static_cast<size_t>(widthPixels * heightPixels) * BYTES_PER_PIXEL
+        parsedImage + texels.size() * sizeof(vkt::RGBATexel),
+        reinterpret_cast<uint8_t*>(texels.data())
+    );
+
+    std::optional<vkt::ImageRGBA> image{
+        std::in_place,
+        vkt::ImageRGBA{
+            .width = width,
+            .height = height,
+            .texels = std::move(texels),
+        }
     };
 
     stbi_image_free(parsedImage);
 
-    return vkt::ImageRGBA{.x = widthPixels, .y = heightPixels, .bytes = rgba};
+    return image;
 }
 } // namespace detail_stbi
 
@@ -971,26 +980,21 @@ auto Mesh::fromPath(
     size_t constexpr DEFAULT_IMAGE_DIMENSIONS{64ULL};
 
     ImageRGBA defaultImage{
-        .x = DEFAULT_IMAGE_DIMENSIONS,
-        .y = DEFAULT_IMAGE_DIMENSIONS,
-        .bytes = std::vector<uint8_t>{}
+        .width = DEFAULT_IMAGE_DIMENSIONS,
+        .height = DEFAULT_IMAGE_DIMENSIONS,
+        .texels = std::vector<RGBATexel>(
+            DEFAULT_IMAGE_DIMENSIONS * DEFAULT_IMAGE_DIMENSIONS
+        )
     };
-    defaultImage.bytes.resize(
-        static_cast<size_t>(defaultImage.x)
-        * static_cast<size_t>(defaultImage.y) * sizeof(RGBATexel)
-    );
 
     {
         // Default color texture is a grey checkerboard
 
         size_t index{0};
-        for (RGBATexel& texel : std::span<RGBATexel>{
-                 reinterpret_cast<RGBATexel*>(defaultImage.bytes.data()),
-                 defaultImage.bytes.size() / sizeof(RGBATexel)
-             })
+        for (RGBATexel& texel : defaultImage.texels)
         {
-            size_t const x{index % defaultImage.x};
-            size_t const y{index / defaultImage.x};
+            size_t const x{index % defaultImage.width};
+            size_t const y{index / defaultImage.width};
 
             RGBATexel constexpr LIGHT_GREY{
                 .r = 200U, .g = 200U, .b = 200U, .a = 255U
@@ -1021,10 +1025,7 @@ auto Mesh::fromPath(
     {
         // Default normal texture
 
-        for (RGBATexel& texel : std::span<RGBATexel>{
-                 reinterpret_cast<RGBATexel*>(defaultImage.bytes.data()),
-                 defaultImage.bytes.size() / sizeof(RGBATexel)
-             })
+        for (RGBATexel& texel : defaultImage.texels)
         {
             // Signed normal of (0,0,1) stored as unsigned (0.5,0.5,1.0)
             RGBATexel constexpr DEFAULT_NORMAL{

@@ -150,7 +150,7 @@ auto Image::uploadToDevice(
     ImageRGBA const& image
 ) -> std::optional<vkt::Image>
 {
-    VkExtent2D const imageExtent{.width = image.x, .height = image.y};
+    VkExtent2D const imageExtent{.width = image.width, .height = image.height};
 
     std::optional<vkt::Image> stagingImageResult{vkt::Image::allocate(
         device,
@@ -180,10 +180,10 @@ auto Image::uploadToDevice(
         && allocationInfo.value().pMappedData != nullptr)
     {
         auto* const stagingImageData{
-            reinterpret_cast<uint8_t*>(allocationInfo.value().pMappedData)
+            reinterpret_cast<RGBATexel*>(allocationInfo.value().pMappedData)
         };
 
-        std::copy(image.bytes.begin(), image.bytes.end(), stagingImageData);
+        std::copy(image.texels.begin(), image.texels.end(), stagingImageData);
     }
     else
     {
