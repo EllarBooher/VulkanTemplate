@@ -30,11 +30,10 @@ auto ImageView::allocate(
         return std::nullopt;
     }
 
-    std::optional<std::unique_ptr<Image>> imageAllocationResult{
+    std::optional<Image> imageAllocationResult{
         Image::allocate(device, allocator, imageParameters)
     };
-    if (!imageAllocationResult.has_value()
-        || imageAllocationResult.value() == nullptr)
+    if (!imageAllocationResult.has_value())
     {
         VKT_ERROR("Failed to allocate Image.");
         return std::nullopt;
@@ -43,7 +42,7 @@ auto ImageView::allocate(
     return allocate(
         device,
         allocator,
-        std::move(*imageAllocationResult.value()),
+        std::move(imageAllocationResult.value()),
         viewParameters
     );
 }
@@ -93,6 +92,51 @@ auto ImageView::allocate(
     };
 
     return std::make_unique<ImageView>(std::move(finalView));
+}
+
+auto ImageView::uploadToDevice(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::ImmediateSubmissionQueue const& submissionQueue,
+    VkFormat const format,
+    VkImageUsageFlags const additionalFlags,
+    ImageRGBA const& image
+) -> std::optional<vkt::ImageView>
+{
+    // TODO: add more formats and a way to generally check if a format is
+    // reasonable. Also support copying 32 bit -> any image format.
+    if (format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_R8G8B8A8_SRGB)
+    {
+        VKT_WARNING(
+            "Uploading texture to device as possibly unsupported format '{}'- "
+            "images are loaded onto the CPU as 32 bit RGBA.",
+            string_VkFormat(format)
+        );
+    }
+
+    std::optional<vkt::Image> uploadResult{vkt::Image::uploadToDevice(
+        device, allocator, submissionQueue, format, additionalFlags, image
+    )};
+    if (!uploadResult.has_value())
+    {
+        VKT_ERROR("Failed to upload image to GPU.");
+        return std::nullopt;
+    }
+    std::optional<std::unique_ptr<vkt::ImageView>> imageViewResult{
+        vkt::ImageView::allocate(
+            device,
+            allocator,
+            std::move(uploadResult).value(),
+            vkt::ImageViewAllocationParameters{}
+        )
+    };
+    if (!imageViewResult.has_value() || imageViewResult.value() == nullptr)
+    {
+        VKT_ERROR("Failed to convert image into imageview.");
+        return std::nullopt;
+    }
+
+    return std::move(*imageViewResult.value());
 }
 
 // NOLINTNEXTLINE(readability-make-member-function-const)

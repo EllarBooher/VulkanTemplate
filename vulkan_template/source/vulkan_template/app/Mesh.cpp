@@ -7,7 +7,6 @@
 #include "vulkan_template/vulkan/Immediate.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
-#include <algorithm>
 #include <cassert>
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp> // IWYU pragma: keep
@@ -19,7 +18,6 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
-#include <limits>
 #include <span>
 #include <spdlog/fmt/bundled/core.h>
 #include <string>
@@ -32,23 +30,6 @@
 
 namespace
 {
-struct RGBATexel
-{
-    uint8_t r{0};
-    uint8_t g{0};
-    uint8_t b{0};
-    uint8_t a{std::numeric_limits<uint8_t>::max()};
-
-    static uint8_t constexpr SATURATED_COMPONENT{255U};
-};
-
-struct ImageRGBA
-{
-    uint32_t x{0};
-    uint32_t y{0};
-    std::vector<uint8_t> bytes{};
-};
-
 auto ensureAbsolutePath(
     std::filesystem::path const& path,
     std::filesystem::path const& root = std::filesystem::current_path()
@@ -65,157 +46,10 @@ auto ensureAbsolutePath(
 
 namespace
 {
-auto uploadImageToGPU(
-    VkDevice const device,
-    VmaAllocator const allocator,
-    vkt::ImmediateSubmissionQueue const& submissionQueue,
-    VkFormat const format,
-    VkImageUsageFlags const additionalFlags,
-    ImageRGBA const& image
-) -> std::optional<std::unique_ptr<vkt::Image>>
-{
-    VkExtent2D const imageExtent{.width = image.x, .height = image.y};
-
-    std::optional<std::unique_ptr<vkt::Image>> stagingImageResult{
-        vkt::Image::allocate(
-            device,
-            allocator,
-            vkt::ImageAllocationParameters{
-                .extent = imageExtent,
-                .format = format,
-                .usageFlags = VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
-                .tiling = VK_IMAGE_TILING_LINEAR,
-                .vmaUsage = VMA_MEMORY_USAGE_CPU_ONLY,
-                .vmaFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
-            }
-        )
-    };
-    if (!stagingImageResult.has_value())
-    {
-        VKT_ERROR("Failed to allocate staging image.");
-        return std::nullopt;
-    }
-    vkt::Image& stagingImage{*stagingImageResult.value()};
-
-    std::optional<VmaAllocationInfo> const allocationInfo{
-        stagingImage.fetchAllocationInfo()
-    };
-
-    if (allocationInfo.has_value()
-        && allocationInfo.value().pMappedData != nullptr)
-    {
-        auto* const stagingImageData{
-            reinterpret_cast<uint8_t*>(allocationInfo.value().pMappedData)
-        };
-
-        std::copy(image.bytes.begin(), image.bytes.end(), stagingImageData);
-    }
-    else
-    {
-        VKT_ERROR("Failed to map bytes of staging image.");
-        return std::nullopt;
-    }
-
-    std::optional<std::unique_ptr<vkt::Image>> finalImageResult{
-        vkt::Image::allocate(
-            device,
-            allocator,
-            vkt::ImageAllocationParameters{
-                .extent = imageExtent,
-                .format = format,
-                .usageFlags = VK_IMAGE_USAGE_SAMPLED_BIT
-                            | VK_IMAGE_USAGE_TRANSFER_DST_BIT | additionalFlags,
-                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .tiling = VK_IMAGE_TILING_OPTIMAL
-            }
-        )
-    };
-    if (!finalImageResult.has_value())
-    {
-        VKT_ERROR("Failed to allocate final image.");
-        return std::nullopt;
-    }
-    vkt::Image& finalImage{*finalImageResult.value()};
-
-    if (auto const submissionResult{submissionQueue.immediateSubmit(
-            [&](VkCommandBuffer const cmd)
-    {
-        stagingImage.recordTransitionBarriered(
-            cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
-        );
-
-        finalImage.recordTransitionBarriered(
-            cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
-        );
-
-        vkt::Image::recordCopyEntire(
-            cmd, stagingImage, finalImage, VK_IMAGE_ASPECT_COLOR_BIT
-        );
-    }
-        )};
-        submissionResult
-        != vkt::ImmediateSubmissionQueue::SubmissionResult::SUCCESS)
-    {
-        VKT_ERROR("Failed to copy images.");
-        return std::nullopt;
-    }
-
-    return std::move(finalImageResult).value();
-}
-
-auto uploadTextureToGPU(
-    VkDevice const device,
-    VmaAllocator const allocator,
-    vkt::ImmediateSubmissionQueue const& submissionQueue,
-    VkFormat const format,
-    ImageRGBA const& image
-) -> std::optional<vkt::ImageView>
-{
-    // TODO: add more formats and a way to generally check if a format is
-    // reasonable. Also support copying 32 bit -> any image format.
-    if (format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_R8G8B8A8_SRGB)
-    {
-        VKT_WARNING(
-            "Uploading texture to device as possibly unsupported format '{}'- "
-            "images are loaded onto the CPU as 32 bit RGBA.",
-            string_VkFormat(format)
-        );
-    }
-
-    std::optional<std::unique_ptr<vkt::Image>> uploadResult{uploadImageToGPU(
-        device,
-        allocator,
-        submissionQueue,
-        format,
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-        image
-    )};
-    if (!uploadResult.has_value())
-    {
-        VKT_ERROR("Failed to upload image to GPU.");
-        return std::nullopt;
-    }
-    std::optional<std::unique_ptr<vkt::ImageView>> imageViewResult{
-        vkt::ImageView::allocate(
-            device,
-            allocator,
-            std::move(*uploadResult.value()),
-            vkt::ImageViewAllocationParameters{}
-        )
-    };
-    if (!imageViewResult.has_value() || imageViewResult.value() == nullptr)
-    {
-        VKT_ERROR("Failed to convert image into imageview.");
-        return std::nullopt;
-    }
-
-    return std::move(*imageViewResult.value());
-}
-
 namespace detail_stbi
 {
-auto loadRGBA(std::span<uint8_t const> const bytes) -> std::optional<ImageRGBA>
+auto loadRGBA(std::span<uint8_t const> const bytes)
+    -> std::optional<vkt::ImageRGBA>
 {
     int32_t x{0};
     int32_t y{0};
@@ -260,7 +94,7 @@ auto loadRGBA(std::span<uint8_t const> const bytes) -> std::optional<ImageRGBA>
 
     stbi_image_free(parsedImage);
 
-    return ImageRGBA{.x = widthPixels, .y = heightPixels, .bytes = rgba};
+    return vkt::ImageRGBA{.x = widthPixels, .y = heightPixels, .bytes = rgba};
 }
 } // namespace detail_stbi
 
@@ -333,9 +167,9 @@ auto convertGLTFImageToRGBA(
         view,
     std::span<fastgltf::Buffer const> const buffers,
     std::span<fastgltf::BufferView const> const bufferViews
-) -> std::optional<ImageRGBA>
+) -> std::optional<vkt::ImageRGBA>
 {
-    std::optional<ImageRGBA> result{std::nullopt};
+    std::optional<vkt::ImageRGBA> result{std::nullopt};
 
     if (view.has_value())
     {
@@ -362,7 +196,8 @@ auto convertGLTFImageToRGBA(
             };
         }
 
-        std::optional<ImageRGBA> imageConvertResult{detail_stbi::loadRGBA(data)
+        std::optional<vkt::ImageRGBA> imageConvertResult{
+            detail_stbi::loadRGBA(data)
         };
 
         if (imageConvertResult.has_value())
@@ -423,7 +258,8 @@ auto convertGLTFImageToRGBA(
         // Throw the file to stbi and hope for the best, it should detect the
         // file headers properly
 
-        std::optional<ImageRGBA> imageConvertResult{detail_stbi::loadRGBA(data)
+        std::optional<vkt::ImageRGBA> imageConvertResult{
+            detail_stbi::loadRGBA(data)
         };
 
         if (imageConvertResult.has_value())
@@ -548,7 +384,7 @@ auto uploadTextureFromIndex(
         return std::nullopt;
     }
 
-    std::optional<ImageRGBA> convertResult{convertGLTFImageToRGBA(
+    std::optional<vkt::ImageRGBA> convertResult{convertGLTFImageToRGBA(
         textureResult.value().get().data,
         assetRoot,
         std::nullopt,
@@ -571,8 +407,13 @@ auto uploadTextureFromIndex(
         break;
     }
 
-    return uploadTextureToGPU(
-        device, allocator, submissionQueue, fileFormat, convertResult.value()
+    return vkt::ImageView::uploadToDevice(
+        device,
+        allocator,
+        submissionQueue,
+        fileFormat,
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        convertResult.value()
     );
 }
 
@@ -1165,15 +1006,17 @@ auto Mesh::fromPath(
             index++;
         }
 
-        defaultMaterial.color =
-            std::make_shared<vkt::ImageView>(::uploadTextureToGPU(
-                                                 device,
-                                                 allocator,
-                                                 submissionQueue,
-                                                 VK_FORMAT_R8G8B8A8_UNORM,
-                                                 defaultImage
+        defaultMaterial.color = std::make_shared<vkt::ImageView>(
+            vkt::ImageView::uploadToDevice(
+                device,
+                allocator,
+                submissionQueue,
+                VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                defaultImage
             )
-                                                 .value());
+                .value()
+        );
     }
     {
         // Default normal texture
@@ -1191,15 +1034,17 @@ auto Mesh::fromPath(
             texel = DEFAULT_NORMAL;
         }
 
-        defaultMaterial.normal =
-            std::make_shared<vkt::ImageView>(::uploadTextureToGPU(
-                                                 device,
-                                                 allocator,
-                                                 submissionQueue,
-                                                 VK_FORMAT_R8G8B8A8_UNORM,
-                                                 defaultImage
+        defaultMaterial.normal = std::make_shared<vkt::ImageView>(
+            vkt::ImageView::uploadToDevice(
+                device,
+                allocator,
+                submissionQueue,
+                VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                defaultImage
             )
-                                                 .value());
+                .value()
+        );
     }
 
     std::vector<Mesh> newMeshes{detail_fastgltf::loadMeshes(

@@ -2,8 +2,11 @@
 
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/ImageOperations.hpp"
+#include "vulkan_template/vulkan/Immediate.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
+#include <algorithm>
+#include <functional>
 #include <spdlog/fmt/bundled/core.h>
 #include <spdlog/fmt/bundled/format.h>
 #include <utility>
@@ -66,7 +69,7 @@ auto Image::allocate(
     VkDevice const device,
     VmaAllocator const allocator,
     ImageAllocationParameters const& parameters
-) -> std::optional<std::unique_ptr<Image>>
+) -> std::optional<Image>
 {
     VkExtent3D const extent3D{
         .width = parameters.extent.width,
@@ -105,10 +108,8 @@ auto Image::allocate(
         .usage = parameters.vmaUsage,
     };
 
-    std::optional<std::unique_ptr<Image>> imageResult{
-        std::in_place, std::make_unique<Image>(Image{})
-    };
-    Image& image{*imageResult.value()};
+    std::optional<Image> imageResult{std::in_place, Image{}};
+    Image& image{imageResult.value()};
 
     VkImage imageHandle;
     VmaAllocation allocation;
@@ -138,6 +139,101 @@ auto Image::allocate(
     image.m_recordedLayout = imageInfo.initialLayout;
 
     return imageResult;
+}
+
+auto Image::uploadToDevice(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::ImmediateSubmissionQueue const& submissionQueue,
+    VkFormat const format,
+    VkImageUsageFlags const additionalFlags,
+    ImageRGBA const& image
+) -> std::optional<vkt::Image>
+{
+    VkExtent2D const imageExtent{.width = image.x, .height = image.y};
+
+    std::optional<vkt::Image> stagingImageResult{vkt::Image::allocate(
+        device,
+        allocator,
+        vkt::ImageAllocationParameters{
+            .extent = imageExtent,
+            .format = format,
+            .usageFlags = VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+            .tiling = VK_IMAGE_TILING_LINEAR,
+            .vmaUsage = VMA_MEMORY_USAGE_CPU_ONLY,
+            .vmaFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        }
+    )};
+    if (!stagingImageResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate staging image.");
+        return std::nullopt;
+    }
+    vkt::Image& stagingImage{stagingImageResult.value()};
+
+    std::optional<VmaAllocationInfo> const allocationInfo{
+        stagingImage.fetchAllocationInfo()
+    };
+
+    if (allocationInfo.has_value()
+        && allocationInfo.value().pMappedData != nullptr)
+    {
+        auto* const stagingImageData{
+            reinterpret_cast<uint8_t*>(allocationInfo.value().pMappedData)
+        };
+
+        std::copy(image.bytes.begin(), image.bytes.end(), stagingImageData);
+    }
+    else
+    {
+        VKT_ERROR("Failed to map bytes of staging image.");
+        return std::nullopt;
+    }
+
+    std::optional<vkt::Image> finalImageResult{vkt::Image::allocate(
+        device,
+        allocator,
+        vkt::ImageAllocationParameters{
+            .extent = imageExtent,
+            .format = format,
+            .usageFlags = VK_IMAGE_USAGE_SAMPLED_BIT
+                        | VK_IMAGE_USAGE_TRANSFER_DST_BIT | additionalFlags,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .tiling = VK_IMAGE_TILING_OPTIMAL
+        }
+    )};
+    if (!finalImageResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate final image.");
+        return std::nullopt;
+    }
+    vkt::Image& finalImage{finalImageResult.value()};
+
+    if (auto const submissionResult{submissionQueue.immediateSubmit(
+            [&](VkCommandBuffer const cmd)
+    {
+        stagingImage.recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
+        );
+
+        finalImage.recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
+        );
+
+        vkt::Image::recordCopyEntire(
+            cmd, stagingImage, finalImage, VK_IMAGE_ASPECT_COLOR_BIT
+        );
+    }
+        )};
+        submissionResult
+        != vkt::ImmediateSubmissionQueue::SubmissionResult::SUCCESS)
+    {
+        VKT_ERROR("Failed to copy images.");
+        return std::nullopt;
+    }
+
+    return std::move(finalImageResult).value();
 }
 
 auto Image::extent3D() const -> VkExtent3D

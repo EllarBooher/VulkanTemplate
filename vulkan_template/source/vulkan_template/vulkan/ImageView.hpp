@@ -7,6 +7,11 @@
 
 namespace vkt
 {
+struct ImmediateSubmissionQueue;
+} // namespace vkt
+
+namespace vkt
+{
 struct ImageViewAllocationParameters
 {
     // Views use the image's format, or optionally an override that must be
@@ -69,6 +74,16 @@ public:
         Image&&,
         ImageViewAllocationParameters const& viewParameters
     ) -> std::optional<std::unique_ptr<ImageView>>;
+
+    // See Image::uploadToDevice for details
+    static auto uploadToDevice(
+        VkDevice,
+        VmaAllocator,
+        vkt::ImmediateSubmissionQueue const&,
+        VkFormat const format,
+        VkImageUsageFlags const additionalFlags,
+        ImageRGBA const& image
+    ) -> std::optional<vkt::ImageView>;
 
     // WARNING: Do not destroy this image view.
     auto view() -> VkImageView;

@@ -1,8 +1,14 @@
 #pragma once
 
+#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
-#include <memory>
 #include <optional>
+#include <vector>
+
+namespace vkt
+{
+struct ImmediateSubmissionQueue;
+} // namespace vkt
 
 namespace vkt
 {
@@ -29,6 +35,23 @@ struct ImageAllocationParameters
     VmaAllocationCreateFlags vmaFlags{0};
 };
 
+struct RGBATexel
+{
+    static uint8_t constexpr SATURATED_COMPONENT{255U};
+
+    uint8_t r{0};
+    uint8_t g{0};
+    uint8_t b{0};
+    uint8_t a{SATURATED_COMPONENT};
+};
+
+struct ImageRGBA
+{
+    uint32_t x{0};
+    uint32_t y{0};
+    std::vector<uint8_t> bytes{};
+};
+
 struct Image
 {
 public:
@@ -47,7 +70,21 @@ private:
 public:
     static auto
     allocate(VkDevice, VmaAllocator, ImageAllocationParameters const&)
-        -> std::optional<std::unique_ptr<Image>>;
+        -> std::optional<Image>;
+
+    // The extent of the image will be derived from the passed CPU data.
+    // Due to the requirements of uploading image data, usage flags will have
+    // VK_IMAGE_USAGE_SAMPLED_BIT and VK_IMAGE_USAGE_TRANSFER_DST_BIT added.
+    // Initial layout will be VK_IMAGE_LAYOUT_UNDEFINED,
+    // and tiling will be VK_IMAGE_TILING_OPTIMAL.
+    static auto uploadToDevice(
+        VkDevice,
+        VmaAllocator,
+        vkt::ImmediateSubmissionQueue const&,
+        VkFormat format,
+        VkImageUsageFlags additionalFlags,
+        ImageRGBA const& image
+    ) -> std::optional<vkt::Image>;
 
     // For now, all images are 2D (depth of 1)
     [[nodiscard]] auto extent3D() const -> VkExtent3D;
