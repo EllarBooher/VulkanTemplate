@@ -196,7 +196,7 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
         }
     }
 
-    return clamp(1.0 - accumulatedOcclusion / 6.28318530718, 0.0, 1.0);
+    return clamp(1.0 - accumulatedOcclusion / (floor(sampleCount) * 6.28318530718), 0.0, 1.0);
 }
 
 void main()
