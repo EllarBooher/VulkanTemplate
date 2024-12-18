@@ -82,21 +82,20 @@ auto RenderTarget::create(
         | VK_IMAGE_USAGE_TRANSFER_DST_BIT     // copy into
     };
 
-    if (std::optional<std::unique_ptr<ImageView>> colorResult{
-            ImageView::allocate(
-                device,
-                allocator,
-                ImageAllocationParameters{
-                    .extent = parameters.max,
-                    .format = parameters.color,
-                    .usageFlags = colorUsage,
-                },
-                ImageViewAllocationParameters{}
-            )
-        };
-        colorResult.has_value() && colorResult.value() != nullptr)
+    if (std::optional<ImageView> colorResult{ImageView::allocate(
+            device,
+            allocator,
+            ImageAllocationParameters{
+                .extent = parameters.max,
+                .format = parameters.color,
+                .usageFlags = colorUsage,
+            },
+            ImageViewAllocationParameters{}
+        )};
+        colorResult.has_value())
     {
-        renderTarget.m_color = std::move(colorResult).value();
+        renderTarget.m_color =
+            std::make_unique<ImageView>(std::move(colorResult).value());
 
         VkSamplerCreateInfo const samplerInfo{samplerCreateInfo(
             0,
@@ -124,24 +123,23 @@ auto RenderTarget::create(
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
     };
 
-    if (std::optional<std::unique_ptr<ImageView>> depthResult{
-            ImageView::allocate(
-                device,
-                allocator,
-                ImageAllocationParameters{
-                    .extent = parameters.max,
-                    .format = parameters.depth,
-                    .usageFlags = depthUsage,
-                },
-                ImageViewAllocationParameters{
-                    .subresourceRange =
-                        imageSubresourceRange(VK_IMAGE_ASPECT_DEPTH_BIT),
-                }
-            )
-        };
-        depthResult.has_value() && depthResult.value() != nullptr)
+    if (std::optional<ImageView> depthResult{ImageView::allocate(
+            device,
+            allocator,
+            ImageAllocationParameters{
+                .extent = parameters.max,
+                .format = parameters.depth,
+                .usageFlags = depthUsage,
+            },
+            ImageViewAllocationParameters{
+                .subresourceRange =
+                    imageSubresourceRange(VK_IMAGE_ASPECT_DEPTH_BIT),
+            }
+        )};
+        depthResult.has_value())
     {
-        renderTarget.m_depth = std::move(depthResult).value();
+        renderTarget.m_depth =
+            std::make_unique<ImageView>(std::move(depthResult).value());
 
         VkSamplerCreateInfo const samplerInfo{samplerCreateInfo(
             0,

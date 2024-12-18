@@ -46,65 +46,60 @@ auto allocateTextures(
             vkt::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT)
     };
 
-    std::optional<std::unique_ptr<vkt::ImageView>> diffuseResult{
-        vkt::ImageView::allocate(
-            device, allocator, imageParameters, viewParameters
-        )
-    };
-    if (!diffuseResult.has_value() || diffuseResult.value() == nullptr)
+    std::optional<vkt::ImageView> diffuseResult{vkt::ImageView::allocate(
+        device, allocator, imageParameters, viewParameters
+    )};
+    if (!diffuseResult.has_value())
     {
         VKT_ERROR("Failed to create GBuffer diffuse color image.");
         return std::nullopt;
     }
-    textures.diffuse = std::move(diffuseResult).value();
+    textures.diffuse =
+        std::make_unique<vkt::ImageView>(std::move(diffuseResult).value());
 
-    std::optional<std::unique_ptr<vkt::ImageView>> specularResult{
-        vkt::ImageView::allocate(
-            device, allocator, imageParameters, viewParameters
-        )
-    };
-    if (!specularResult.has_value() || specularResult.value() == nullptr)
+    std::optional<vkt::ImageView> specularResult{vkt::ImageView::allocate(
+        device, allocator, imageParameters, viewParameters
+    )};
+    if (!specularResult.has_value())
     {
         VKT_ERROR("Failed to create GBuffer specular color image.");
         return std::nullopt;
     }
-    textures.specular = std::move(specularResult).value();
+    textures.specular =
+        std::make_unique<vkt::ImageView>(std::move(specularResult).value());
 
-    std::optional<std::unique_ptr<vkt::ImageView>> normalResult{
-        vkt::ImageView::allocate(
-            device, allocator, imageParameters, viewParameters
-        )
-    };
-    if (!normalResult.has_value() || normalResult.value() == nullptr)
+    std::optional<vkt::ImageView> normalResult{vkt::ImageView::allocate(
+        device, allocator, imageParameters, viewParameters
+    )};
+    if (!normalResult.has_value())
     {
         VKT_ERROR("Failed to create GBuffer normal image.");
         return std::nullopt;
     }
-    textures.normal = std::move(normalResult).value();
+    textures.normal =
+        std::make_unique<vkt::ImageView>(std::move(normalResult).value());
 
-    std::optional<std::unique_ptr<vkt::ImageView>> positionResult{
-        vkt::ImageView::allocate(
-            device, allocator, worldPositionParameters, viewParameters
-        )
-    };
-    if (!positionResult.has_value() || positionResult.value() == nullptr)
+    std::optional<vkt::ImageView> positionResult{vkt::ImageView::allocate(
+        device, allocator, worldPositionParameters, viewParameters
+    )};
+    if (!positionResult.has_value())
     {
         VKT_ERROR("Failed to create GBuffer worldPosition image.");
         return std::nullopt;
     }
-    textures.worldPosition = std::move(positionResult).value();
+    textures.worldPosition =
+        std::make_unique<vkt::ImageView>(std::move(positionResult).value());
 
-    std::optional<std::unique_ptr<vkt::ImageView>> ormResult{
-        vkt::ImageView::allocate(
-            device, allocator, imageParameters, viewParameters
-        )
-    };
-    if (!ormResult.has_value() || ormResult.value() == nullptr)
+    std::optional<vkt::ImageView> ormResult{vkt::ImageView::allocate(
+        device, allocator, imageParameters, viewParameters
+    )};
+    if (!ormResult.has_value())
     {
         VKT_ERROR("Failed to create GBuffer occlusionRoughnessMetallic image.");
         return std::nullopt;
     }
-    textures.occlusionRoughnessMetallic = std::move(ormResult).value();
+    textures.occlusionRoughnessMetallic =
+        std::make_unique<vkt::ImageView>(std::move(ormResult).value());
 
     return texturesResult;
 }

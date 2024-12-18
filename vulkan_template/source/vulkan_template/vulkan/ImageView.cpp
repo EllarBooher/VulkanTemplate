@@ -22,7 +22,7 @@ auto ImageView::allocate(
     VmaAllocator const allocator,
     ImageAllocationParameters const& imageParameters,
     ImageViewAllocationParameters const& viewParameters
-) -> std::optional<std::unique_ptr<ImageView>>
+) -> std::optional<ImageView>
 {
     if (device == VK_NULL_HANDLE || allocator == VK_NULL_HANDLE)
     {
@@ -52,7 +52,7 @@ auto ImageView::allocate(
     VmaAllocator const allocator,
     Image&& preallocatedImage,
     ImageViewAllocationParameters const& viewParameters
-) -> std::optional<std::unique_ptr<ImageView>>
+) -> std::optional<ImageView>
 {
     if (device == VK_NULL_HANDLE || allocator == VK_NULL_HANDLE)
     {
@@ -91,7 +91,7 @@ auto ImageView::allocate(
         .view = view,
     };
 
-    return std::make_unique<ImageView>(std::move(finalView));
+    return finalView;
 }
 
 auto ImageView::uploadToDevice(
@@ -122,21 +122,13 @@ auto ImageView::uploadToDevice(
         VKT_ERROR("Failed to upload image to GPU.");
         return std::nullopt;
     }
-    std::optional<std::unique_ptr<vkt::ImageView>> imageViewResult{
-        vkt::ImageView::allocate(
-            device,
-            allocator,
-            std::move(uploadResult).value(),
-            vkt::ImageViewAllocationParameters{}
-        )
-    };
-    if (!imageViewResult.has_value() || imageViewResult.value() == nullptr)
-    {
-        VKT_ERROR("Failed to convert image into imageview.");
-        return std::nullopt;
-    }
 
-    return std::move(*imageViewResult.value());
+    return vkt::ImageView::allocate(
+        device,
+        allocator,
+        std::move(uploadResult).value(),
+        vkt::ImageViewAllocationParameters{}
+    );
 }
 
 // NOLINTNEXTLINE(readability-make-member-function-const)

@@ -66,14 +66,14 @@ public:
         VmaAllocator,
         ImageAllocationParameters const&,
         ImageViewAllocationParameters const& viewParameters
-    ) -> std::optional<std::unique_ptr<ImageView>>;
+    ) -> std::optional<ImageView>;
 
     static auto allocate(
         VkDevice,
         VmaAllocator,
         Image&&,
         ImageViewAllocationParameters const& viewParameters
-    ) -> std::optional<std::unique_ptr<ImageView>>;
+    ) -> std::optional<ImageView>;
 
     // See Image::uploadToDevice for details
     static auto uploadToDevice(
