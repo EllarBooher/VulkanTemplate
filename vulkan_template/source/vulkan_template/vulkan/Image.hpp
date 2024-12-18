@@ -2,7 +2,9 @@
 
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
+#include <glm/vec2.hpp>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace vkt
@@ -52,6 +54,18 @@ struct ImageRGBA
     std::vector<RGBATexel> texels{};
 };
 
+struct TexelRG16_SNORM
+{
+    int16_t r{0};
+    int16_t g{0};
+};
+
+struct ImageRG16_SNORM
+{
+    glm::u32vec2 extent{};
+    std::vector<TexelRG16_SNORM> texels{};
+};
+
 struct Image
 {
 public:
@@ -84,6 +98,18 @@ public:
         VkFormat format,
         VkImageUsageFlags additionalFlags,
         ImageRGBA const& image
+    ) -> std::optional<vkt::Image>;
+
+    // Overload that takes in bytes. It is up to the caller to ensure that
+    // extent/image/format are all synced and valid.
+    static auto uploadToDevice(
+        VkDevice,
+        VmaAllocator,
+        vkt::ImmediateSubmissionQueue const&,
+        VkFormat format,
+        VkImageUsageFlags additionalFlags,
+        glm::u32vec2 extent,
+        std::span<uint8_t const> bytes
     ) -> std::optional<vkt::Image>;
 
     // For now, all images are 2D (depth of 1)

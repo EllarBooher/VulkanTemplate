@@ -201,7 +201,11 @@ auto initialize() -> std::optional<Resources>
     VKT_INFO("Creating Lighting Pass...");
 
     std::optional<vkt::LightingPass> lightingPassResult{
-        vkt::LightingPass::create(graphicsContext.device())
+        vkt::LightingPass::create(
+            graphicsContext.device(),
+            graphicsContext.allocator(),
+            submissionQueue
+        )
     };
     if (!lightingPassResult.has_value())
     {

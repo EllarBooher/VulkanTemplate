@@ -1,15 +1,21 @@
 #pragma once
 
+#include "vulkan_template/app/DescriptorAllocator.hpp"
+#include "vulkan_template/vulkan/Image.hpp"
+#include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <glm/vec3.hpp>
 #include <imgui.h>
+#include <memory>
 #include <optional>
+#include <unordered_map>
 
 namespace vkt
 {
 struct RenderTarget;
 struct GBuffer;
 struct Scene;
+struct ImmediateSubmissionQueue;
 } // namespace vkt
 
 namespace vkt
@@ -17,6 +23,7 @@ namespace vkt
 struct LightingPassParameters
 {
     bool enableAO;
+    bool enableRandomNormalSampling;
 
     glm::vec3 lightAxisAngles;
     float lightStrength;
@@ -37,7 +44,8 @@ struct LightingPass
 
     ~LightingPass();
 
-    static auto create(VkDevice) -> std::optional<LightingPass>;
+    static auto create(VkDevice, VmaAllocator, ImmediateSubmissionQueue const&)
+        -> std::optional<LightingPass>;
 
     void
     recordDraw(VkCommandBuffer, RenderTarget&, GBuffer const&, Scene const&);
@@ -58,14 +66,20 @@ private:
     // layout(set = 1, binding = 4) uniform sampler2D
     // gbuffer_OcclusionRoughnessMetallic;
 
-    VkDescriptorSetLayout m_renderTargetLayout{};
-    VkDescriptorSetLayout m_gbufferLayout{};
+    // layout(rg16_snorm, set = 2, binding = 0) uniform image2D randomNormals;
+
+    VkDescriptorSetLayout m_renderTargetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout m_gbufferLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout m_randomNormalsLayout{VK_NULL_HANDLE};
+
+    VkDescriptorSet m_randomNormalsSet{VK_NULL_HANDLE};
+    std::unique_ptr<ImageView> m_randomNormals{};
+    std::unique_ptr<DescriptorAllocator> m_descriptorAllocator{};
 
     static LightingPassParameters DEFAULT_PARAMETERS;
     LightingPassParameters m_parameters{DEFAULT_PARAMETERS};
 
-    VkShaderEXT m_shaderWithoutAO{VK_NULL_HANDLE};
-    VkShaderEXT m_shaderWithAO{VK_NULL_HANDLE};
+    std::unordered_map<size_t, VkShaderEXT> m_shadersBySpecializationHash{};
     VkPipelineLayout m_shaderLayout{VK_NULL_HANDLE};
 };
 } // namespace vkt

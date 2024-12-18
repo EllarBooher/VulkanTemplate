@@ -70,6 +70,7 @@ public:
     void clearDescriptors(VkDevice device);
 
     // Asserts on failure
+    // TODO: remove extra device parameter
     auto allocate(VkDevice device, VkDescriptorSetLayout layout)
         -> VkDescriptorSet;
 

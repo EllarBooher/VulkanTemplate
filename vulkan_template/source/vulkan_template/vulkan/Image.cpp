@@ -150,7 +150,31 @@ auto Image::uploadToDevice(
     ImageRGBA const& image
 ) -> std::optional<vkt::Image>
 {
-    VkExtent2D const imageExtent{.width = image.width, .height = image.height};
+    return uploadToDevice(
+        device,
+        allocator,
+        submissionQueue,
+        format,
+        additionalFlags,
+        glm::u32vec2{image.width, image.height},
+        std::span<uint8_t const>{
+            reinterpret_cast<uint8_t const*>(image.texels.data()),
+            sizeof(decltype(image.texels)::value_type) * image.texels.size()
+        }
+    );
+}
+
+auto Image::uploadToDevice(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::ImmediateSubmissionQueue const& submissionQueue,
+    VkFormat const format,
+    VkImageUsageFlags const additionalFlags,
+    glm::u32vec2 const extent,
+    std::span<uint8_t const> const bytes
+) -> std::optional<vkt::Image>
+{
+    VkExtent2D const imageExtent{.width = extent.x, .height = extent.y};
 
     std::optional<vkt::Image> stagingImageResult{vkt::Image::allocate(
         device,
@@ -180,10 +204,10 @@ auto Image::uploadToDevice(
         && allocationInfo.value().pMappedData != nullptr)
     {
         auto* const stagingImageData{
-            reinterpret_cast<RGBATexel*>(allocationInfo.value().pMappedData)
+            reinterpret_cast<uint8_t*>(allocationInfo.value().pMappedData)
         };
 
-        std::copy(image.texels.begin(), image.texels.end(), stagingImageData);
+        std::copy(bytes.begin(), bytes.end(), stagingImageData);
     }
     else
     {
