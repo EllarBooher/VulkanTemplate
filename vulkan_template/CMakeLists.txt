@@ -47,6 +47,14 @@ target_include_directories(
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+	target_compile_options(
+		vulkan_template_lib
+		PRIVATE
+			-Werror=return-type
+	)
+endif()
+
 target_compile_definitions(
 	vulkan_template_lib
 	PRIVATE
