@@ -155,10 +155,10 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
     );
 
     const vec2 sampleOffsets[4] = vec2[4](
-        vec2(-uvSampleRadius.x, 0), 
-        vec2(0, uvSampleRadius.y), 
-        vec2(uvSampleRadius.x, 0), 
-        vec2(0, -uvSampleRadius.y)
+        vec2(-1.0, 0), 
+        vec2(0, 1.0), 
+        vec2(1.0, 0), 
+        vec2(0, -1.0)
     );
 
     const float sampleCount = mix(64.0, 4.0, clamp((distanceToCamera - 0.1) / (100 - 0.1), 0.0, 1.0));
@@ -166,7 +166,8 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
     {
         for(int i = 0; i < 4; i++)
         {
-            const vec2 offset = sampleRotate * (sampleOffsets[i] * s * pc.aoScale);
+            // It's important to scale sample after non-uniformly after rotating, since the render area may not be square
+            const vec2 offset = (uvSampleRadius * pc.aoScale * s) * (sampleRotate *  sampleOffsets[i]);
             const vec2 uv = gbufferUV + offset;
             const vec3 occluderPosition = texture(gbuffer_WorldPosition, uv).xyz;
         
