@@ -207,12 +207,12 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .enableAO = true,
 
     .lightAxisAngles = glm::vec3{0.0F, 1.3F, 0.8F},
-    .lightStrength = 4.0F,
-    .ambientStrength = 0.1F,
+    .lightStrength = 0.0F,
+    .ambientStrength = 1.0F,
 
-    .occluderRadius = 0.06F,
+    .occluderRadius = 0.1F,
     .occluderBias = 0.15F,
-    .aoScale = 30.0F,
+    .aoScale = 20.0F,
 };
 // NOLINTEND(readability-magic-numbers)
 

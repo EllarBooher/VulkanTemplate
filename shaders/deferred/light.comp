@@ -148,6 +148,34 @@ vec2 sampleRandomNormal(vec2 uv, float scale)
     return imageLoad(randomNormals, texelCoord).xy;
 }
 
+float sampleOcclusion(const GBufferTexel occludee, const vec2 uv)
+{
+    const vec3 occluderPosition = texture(gbuffer_WorldPosition, uv).xyz;
+            
+    // Avoid sampling gbuffer out of bounds
+    const vec2 uvMin = pc.offset / pc.gBufferCapacity;
+    const vec2 uvMax = (pc.offset + pc.extent) / pc.gBufferCapacity;
+    if (uv.x <= uvMin.x || uv.y <= uvMin.y || uv.x >= uvMax.x || uv.y >= uvMax.y)
+    {
+        return 0.0;
+    }
+
+    if(texture(gbuffer_Diffuse, uv).a < 1.0)
+    {
+        return 0.0;
+    }
+
+    const vec3 v = occluderPosition - occludee.position.xyz;
+    const float d = length(v);
+
+    // The sphere occluder subtends a solid angle from the perspective of the occludee
+    const float occluderSolidAngle = 6.28318530718 * (1.0 - d / sqrt(d * d + pc.occluderRadius * pc.occluderRadius));
+
+    // Normally we need to integrate the occluded light over all v towards the sphere, but we can assume v does not
+    // vary much so we multiply by a single attenuation factor.
+    return clamp(dot(occludee.normal.xyz, normalize(v)) - pc.occluderBias, 0.0, 1.0) * occluderSolidAngle;
+}
+
 float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, vec3 cameraPosition)
 {
     if (!enableAO)
@@ -194,31 +222,7 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
                 uv += offset;
             }
 
-            const vec3 occluderPosition = texture(gbuffer_WorldPosition, uv).xyz;
-            
-            // Avoid sampling gbuffer out of bounds
-            const vec2 uvMin = pc.offset / pc.gBufferCapacity;
-            const vec2 uvMax = (pc.offset + pc.extent) / pc.gBufferCapacity;
-            if (uv.x <= uvMin.x || uv.y <= uvMin.y || uv.x >= uvMax.x || uv.y >= uvMax.y)
-            {
-                continue;
-            }
-
-            if(texture(gbuffer_Diffuse, uv).a < 1.0)
-            {
-                continue;
-            }
-
-            const vec3 v = occluderPosition - occludee.position.xyz;
-            const float d = length(v);
-
-            // The sphere occluder subtends a solid angle from the perspective of the occludee
-            const float occluderSolidAngle = 6.28318530718 * (1.0 - d / sqrt(d * d + pc.occluderRadius * pc.occluderRadius));
-
-            // Normally we need to integrate the occluded light over all v towards the sphere, but we can assume v does not
-            // vary much so we multiply by a single attenuation factor.
-            const float occlusion = clamp(dot(occludee.normal.xyz, normalize(v)) - pc.occluderBias, 0.0, 1.0) * occluderSolidAngle;
-            accumulatedOcclusion += occlusion;
+            accumulatedOcclusion += sampleOcclusion(occludee, uv);
         }
     }
 
