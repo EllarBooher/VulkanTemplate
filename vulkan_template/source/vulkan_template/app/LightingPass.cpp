@@ -58,9 +58,10 @@ struct SpecializationConstant
 {
     uint32_t enableAO{VK_FALSE};
     uint32_t enableRandomNormalSampling{VK_FALSE};
+    uint32_t normalizeRandomNormals{VK_FALSE};
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
-static_assert(sizeof(SpecializationConstant) == 8ULL);
+static_assert(sizeof(SpecializationConstant) == 12ULL);
 
 auto allocateRandomNormalsLayout(VkDevice const device)
     -> std::optional<VkDescriptorSetLayout>
@@ -97,7 +98,7 @@ auto createRandomNormalsImage(
     for (vkt::TexelRG16_SNORM& texel : rawImage.texels)
     {
         glm::vec3 const deflectedNormal{
-            glm::normalize(defaultNormal + glm::ballRand(0.1F))
+            glm::normalize(defaultNormal + glm::ballRand(1.0F))
         };
         // pack the normal
         // int16_t stores -256 to 255
@@ -197,7 +198,8 @@ template <> struct std::hash<::SpecializationConstant>
         // A bit silly since these represent bools, but more general is better
         size_t h1{std::hash<uint32_t>{}(sc.enableAO)};
         size_t h2{std::hash<uint32_t>{}(sc.enableRandomNormalSampling)};
-        return h1 ^ (h2 << 1);
+        size_t h3{std::hash<uint32_t>{}(sc.normalizeRandomNormals)};
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
     }
 };
 
@@ -206,6 +208,8 @@ namespace vkt
 // NOLINTBEGIN(readability-magic-numbers)
 LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .enableAO = true,
+    .enableRandomNormalSampling = true,
+    .normalizeRandomNormals = true,
 
     .lightAxisAngles = glm::vec3{0.0F, 1.3F, 0.8F},
     .lightStrength = 0.0F,
@@ -323,13 +327,24 @@ auto LightingPass::create(
          .size = sizeof(SpecializationConstant::enableAO)},
         {.constantID = 1,
          .offset = offsetof(SpecializationConstant, enableRandomNormalSampling),
-         .size = sizeof(SpecializationConstant::enableRandomNormalSampling)}
+         .size = sizeof(SpecializationConstant::enableRandomNormalSampling)},
+        {.constantID = 2,
+         .offset = offsetof(SpecializationConstant, normalizeRandomNormals),
+         .size = sizeof(SpecializationConstant::normalizeRandomNormals)}
     };
+
+    // Some combinations of features don't make sense, such as disabling AO and
+    // enabling any other features, but there is no real need to worry about
+    // that.
     std::vector<SpecializationConstant> const specializationConstants{
-        {VK_FALSE, VK_FALSE},
-        {VK_FALSE, VK_TRUE},
-        {VK_TRUE, VK_FALSE},
-        {VK_TRUE, VK_TRUE}
+        {VK_FALSE, VK_FALSE, VK_FALSE},
+        {VK_FALSE, VK_FALSE, VK_TRUE},
+        {VK_FALSE, VK_TRUE, VK_FALSE},
+        {VK_FALSE, VK_TRUE, VK_TRUE},
+        {VK_TRUE, VK_FALSE, VK_FALSE},
+        {VK_TRUE, VK_FALSE, VK_TRUE},
+        {VK_TRUE, VK_TRUE, VK_FALSE},
+        {VK_TRUE, VK_TRUE, VK_TRUE}
     };
     char const* SHADER_PATH{"shaders/deferred/light.comp.spv"};
     for (auto const& specialization : specializationConstants)
@@ -455,6 +470,7 @@ void LightingPass::recordDraw(
     SpecializationConstant const specializationConstant{
         .enableAO = m_parameters.enableAO,
         .enableRandomNormalSampling = m_parameters.enableRandomNormalSampling,
+        .normalizeRandomNormals = m_parameters.normalizeRandomNormals,
     };
 
     VkShaderEXT const shader{m_shadersBySpecializationHash.at(
@@ -560,6 +576,11 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             "Enable Random Normal Sampling",
             m_parameters.enableRandomNormalSampling,
             DEFAULT_PARAMETERS.enableRandomNormalSampling
+        );
+        table.rowBoolean(
+            "Normalize Random Normals",
+            m_parameters.normalizeRandomNormals,
+            DEFAULT_PARAMETERS.normalizeRandomNormals
         );
         PropertySliderBehavior constexpr RADIUS_BEHAVIOR{
             .speed = 0.0001F,

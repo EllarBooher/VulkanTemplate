@@ -123,6 +123,7 @@ layout(push_constant) uniform PushConstant
 
 layout(constant_id = 0) const bool enableAO = false;
 layout(constant_id = 1) const bool enableRandomNormalSampling = false;
+layout(constant_id = 2) const bool normalizeRandomNormals = false;
 
 vec3 computeLightContribution(const vec3 lightForward, const PBRTexel material, const vec3 viewDirection)
 {
@@ -143,10 +144,16 @@ vec3 computeLightContribution(const vec3 lightForward, const PBRTexel material, 
 
 vec2 sampleRandomNormal(vec2 uv, float scale)
 {
-    ivec2 texelCoord = ivec2(mod(uv * scale, 1.0) * imageSize(randomNormals));
+    const ivec2 texelCoord = ivec2(mod(uv * scale, 1.0) * imageSize(randomNormals));
 
     // Load only xy, since we just need to reflect in 2D screen space
-    return imageLoad(randomNormals, texelCoord).xy;
+    vec2 sampledNormal = imageLoad(randomNormals, texelCoord).xy;
+    if(normalizeRandomNormals)
+    {
+        sampledNormal = normalize(sampledNormal);
+    }
+
+    return sampledNormal;
 }
 
 float sampleOcclusion(const GBufferTexel occludee, const vec2 uv)

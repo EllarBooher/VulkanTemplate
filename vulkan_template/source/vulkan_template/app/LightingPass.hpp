@@ -25,6 +25,12 @@ struct LightingPassParameters
     bool enableAO;
     bool enableRandomNormalSampling;
 
+    // When sampling a random normal to then reflect our AO samples, we sample
+    // the XY since our samples are in 2D screen space
+    // This produces a different effect, and normalizing is probably more
+    // correct
+    bool normalizeRandomNormals;
+
     glm::vec3 lightAxisAngles;
     float lightStrength;
     float ambientStrength;
