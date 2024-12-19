@@ -156,10 +156,8 @@ vec2 sampleRandomNormal(vec2 uv, float scale)
     return sampledNormal;
 }
 
-float sampleOcclusion(const GBufferTexel occludee, const vec2 uv)
+float sampleOcclusion(const GBufferTexel occludee, sampler2D samplerWorldPos, const vec2 uv)
 {
-    const vec3 occluderPosition = texture(gbuffer_WorldPosition, uv).xyz;
-            
     // Avoid sampling gbuffer out of bounds
     const vec2 uvMin = pc.offset / pc.gBufferCapacity;
     const vec2 uvMax = (pc.offset + pc.extent) / pc.gBufferCapacity;
@@ -168,12 +166,14 @@ float sampleOcclusion(const GBufferTexel occludee, const vec2 uv)
         return 0.0;
     }
 
-    if(texture(gbuffer_Diffuse, uv).a < 1.0)
+    const vec4 occluderPosition = texture(samplerWorldPos, uv);
+     
+    if(occluderPosition.w < 1.0)
     {
         return 0.0;
     }
 
-    const vec3 v = occluderPosition - occludee.position.xyz;
+    const vec3 v = occluderPosition.xyz - occludee.position.xyz;
     const float d = length(v);
 
     if(d < 0.000001)
@@ -231,11 +231,11 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
         const vec2 offset2 = uvSampleRadius * sampleRotate * offset1;
         offset1 = uvSampleRadius * offset1;
 
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 0.25 * offset1);
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 0.75 * offset1);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.25 * offset1);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.75 * offset1);
 
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 0.5 * offset2);
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 1.0 * offset2);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.5 * offset2);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 1.0 * offset2);
     }
 
     return clamp(1.0 - accumulatedOcclusion / (4.0 * 4.0 * 6.28318530718), 0.0, 1.0);
