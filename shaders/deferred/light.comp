@@ -178,6 +178,7 @@ float sampleOcclusion(const GBufferTexel occludee, const vec2 uv)
 
     if(d < 0.000001)
     {
+        // TODO: analyze what percent of samples hit this case
         return 0.0;
     }
 
