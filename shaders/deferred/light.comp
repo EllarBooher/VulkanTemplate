@@ -192,7 +192,7 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
     float accumulatedOcclusion = 0;
 
     const float distanceToCamera = distance(cameraPosition, occludee.position.xyz);
-    const vec2 uvSampleRadius = 1.0 / (pc.extent * distanceToCamera);
+    const float uvSampleRadius = pc.aoScale / distanceToCamera;
 
     const vec2 randomNormal = sampleRandomNormal(gbufferUV, 100.0);
 
@@ -215,20 +215,17 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
     {
         for(int i = 0; i < 4; i++)
         {
-            // It's important to scale sample after non-uniformly after rotating, since the render area may not be square
-            vec2 offset = uvSampleRadius * pc.aoScale * (s / floor(sampleCount)) * (sampleRotate * sampleOffsets[i]);
+            // It's important to scale sample non-uniformly after rotating, since the render area may not be square
+            vec2 offset1 = sampleOffsets[i];
 
-            vec2 uv = gbufferUV;
             if (enableRandomNormalSampling)
             {
-                uv += reflect(offset, randomNormal);
-            }
-            else
-            {
-                uv += offset;
+                offset1 = reflect(offset1, randomNormal);
             }
 
-            accumulatedOcclusion += sampleOcclusion(occludee, uv);
+            offset1 = uvSampleRadius * offset1;
+
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + offset1);
         }
     }
 

@@ -213,7 +213,7 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
 
     .occluderRadius = 0.1F,
     .occluderBias = 0.15F,
-    .aoScale = 20.0F,
+    .aoScale = 0.01F,
     .gbufferWhiteOverride = true,
 };
 // NOLINTEND(readability-magic-numbers)
