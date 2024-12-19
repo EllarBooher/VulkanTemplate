@@ -80,8 +80,8 @@ public:
         VkDevice,
         VmaAllocator,
         vkt::ImmediateSubmissionQueue const&,
-        VkFormat const format,
-        VkImageUsageFlags const additionalFlags,
+        VkFormat format,
+        VkImageUsageFlags additionalFlags,
         ImageRGBA const& image
     ) -> std::optional<vkt::ImageView>;
 

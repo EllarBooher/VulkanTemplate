@@ -1,7 +1,6 @@
 #pragma once
 
 #include "vulkan_template/app/DescriptorAllocator.hpp"
-#include "vulkan_template/vulkan/Image.hpp"
 #include "vulkan_template/vulkan/ImageView.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <glm/vec3.hpp>

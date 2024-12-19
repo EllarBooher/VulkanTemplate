@@ -87,7 +87,8 @@ struct MaterialDescriptorPool
     auto operator=(MaterialDescriptorPool const&) = delete;
     MaterialDescriptorPool(MaterialDescriptorPool const&) = delete;
 
-    auto operator=(MaterialDescriptorPool&&) noexcept;
+    auto operator=(MaterialDescriptorPool&&) noexcept
+        -> MaterialDescriptorPool&;
     MaterialDescriptorPool(MaterialDescriptorPool&&) noexcept;
 
     static auto create(VkDevice) -> std::optional<MaterialDescriptorPool>;

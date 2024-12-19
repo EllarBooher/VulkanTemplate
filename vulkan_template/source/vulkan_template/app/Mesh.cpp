@@ -7,6 +7,7 @@
 #include "vulkan_template/vulkan/Immediate.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
+#include <algorithm>
 #include <cassert>
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp> // IWYU pragma: keep
@@ -82,8 +83,8 @@ auto loadRGBA(std::span<uint8_t const> const bytes)
 
     assert(x > 0 && y > 0);
 
-    uint32_t const width = static_cast<uint32_t>(x);
-    uint32_t const height = static_cast<uint32_t>(y);
+    auto const width = static_cast<uint32_t>(x);
+    auto const height = static_cast<uint32_t>(y);
     std::vector<vkt::RGBATexel> texels{};
     texels.resize(static_cast<size_t>(width) * height);
     std::copy(
@@ -1008,12 +1009,15 @@ auto Mesh::fromPath(
 }
 
 auto MaterialDescriptorPool::operator=(MaterialDescriptorPool&& other) noexcept
+    -> MaterialDescriptorPool&
 {
     device = std::exchange(other.device, VK_NULL_HANDLE);
     materialSampler = std::exchange(other.materialSampler, VK_NULL_HANDLE);
     materialLayout = std::exchange(other.materialLayout, VK_NULL_HANDLE);
 
     materialAllocator = std::exchange(other.materialAllocator, nullptr);
+
+    return *this;
 }
 
 MaterialDescriptorPool::MaterialDescriptorPool(MaterialDescriptorPool&& other

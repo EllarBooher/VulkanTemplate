@@ -196,9 +196,9 @@ template <> struct std::hash<::SpecializationConstant>
     auto operator()(::SpecializationConstant const& sc) const noexcept -> size_t
     {
         // A bit silly since these represent bools, but more general is better
-        size_t h1{std::hash<uint32_t>{}(sc.enableAO)};
-        size_t h2{std::hash<uint32_t>{}(sc.enableRandomNormalSampling)};
-        size_t h3{std::hash<uint32_t>{}(sc.normalizeRandomNormals)};
+        size_t const h1{std::hash<uint32_t>{}(sc.enableAO)};
+        size_t const h2{std::hash<uint32_t>{}(sc.enableRandomNormalSampling)};
+        size_t const h3{std::hash<uint32_t>{}(sc.normalizeRandomNormals)};
         return h1 ^ (h2 << 1) ^ (h3 << 2);
     }
 };
@@ -468,9 +468,11 @@ void LightingPass::recordDraw(
     );
 
     SpecializationConstant const specializationConstant{
-        .enableAO = m_parameters.enableAO,
-        .enableRandomNormalSampling = m_parameters.enableRandomNormalSampling,
-        .normalizeRandomNormals = m_parameters.normalizeRandomNormals,
+        .enableAO = m_parameters.enableAO ? VK_TRUE : VK_FALSE,
+        .enableRandomNormalSampling =
+            m_parameters.enableRandomNormalSampling ? VK_TRUE : VK_FALSE,
+        .normalizeRandomNormals =
+            m_parameters.normalizeRandomNormals ? VK_TRUE : VK_FALSE,
     };
 
     VkShaderEXT const shader{m_shadersBySpecializationHash.at(
@@ -533,7 +535,8 @@ void LightingPass::recordDraw(
         .aoScale = m_parameters.aoScale,
         .lightStrength = m_parameters.lightStrength,
         .ambientStrength = m_parameters.ambientStrength,
-        .gbufferWhiteOverride = m_parameters.gbufferWhiteOverride,
+        .gbufferWhiteOverride =
+            m_parameters.gbufferWhiteOverride ? VK_TRUE : VK_FALSE,
     };
 
     vkCmdPushConstants(
