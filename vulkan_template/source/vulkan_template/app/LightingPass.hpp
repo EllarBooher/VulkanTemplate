@@ -32,6 +32,9 @@ struct LightingPassParameters
     float occluderRadius;
     float occluderBias;
     float aoScale;
+
+    // When sampling gbuffer, read diffuse and specular as pure white vec4(1.0)
+    bool gbufferWhiteOverride;
 };
 
 struct LightingPass

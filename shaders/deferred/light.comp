@@ -117,7 +117,8 @@ layout(push_constant) uniform PushConstant
     float lightStrength;
 
     float ambientStrength;
-    vec3 padding0;
+    bool gbufferWhiteOverride;
+    vec2 padding0;
 } pc;
 
 layout(constant_id = 0) const bool enableAO = false;
@@ -242,12 +243,17 @@ void main()
     const vec2 offset = vec2(0.5, 0.5);
     const vec2 gbufferUV = (vec2(texelCoord) + offset) / pc.gBufferCapacity;
 
-    const GBufferTexel gbufferTexel = sampleGBuffer(gbufferUV);
+    GBufferTexel gbufferTexel = sampleGBuffer(gbufferUV);
 
     // No transparent geometry for now, less than 1.0 alpha indicates background texels
     if (gbufferTexel.diffuseColor.a < 1.0)
     {
         return;
+    }
+    if (pc.gbufferWhiteOverride)
+    {
+        gbufferTexel.diffuseColor = vec4(1.0);
+        gbufferTexel.specularColor = vec4(1.0);
     }
 
     const PBRTexel material = convertPBRProperties(gbufferTexel);

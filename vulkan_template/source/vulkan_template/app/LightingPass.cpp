@@ -48,7 +48,8 @@ struct PushConstant
     float lightStrength;
 
     float ambientStrength;
-    glm::vec3 padding0;
+    uint32_t gbufferWhiteOverride;
+    glm::vec2 padding0;
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
 static_assert(sizeof(PushConstant) == 152ULL);
@@ -213,6 +214,7 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .occluderRadius = 0.1F,
     .occluderBias = 0.15F,
     .aoScale = 20.0F,
+    .gbufferWhiteOverride = true,
 };
 // NOLINTEND(readability-magic-numbers)
 
@@ -515,6 +517,7 @@ void LightingPass::recordDraw(
         .aoScale = m_parameters.aoScale,
         .lightStrength = m_parameters.lightStrength,
         .ambientStrength = m_parameters.ambientStrength,
+        .gbufferWhiteOverride = m_parameters.gbufferWhiteOverride,
     };
 
     vkCmdPushConstants(
@@ -587,6 +590,12 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             DEFAULT_PARAMETERS.aoScale,
             SCALE_BEHAVIOR
         );
+        table.rowBoolean(
+            "Override GBuffer color as white",
+            m_parameters.gbufferWhiteOverride,
+            DEFAULT_PARAMETERS.gbufferWhiteOverride
+        );
+
         table.end();
     }
 
