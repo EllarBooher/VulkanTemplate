@@ -201,7 +201,11 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
     const float distanceToCamera = distance(cameraPosition, occludee.position.xyz);
     const float uvSampleRadius = pc.aoScale / distanceToCamera;
 
-    const vec2 randomNormal = sampleRandomNormal(gbufferUV, 100.0);
+    vec2 randomNormal = vec2(0.0);
+    if (enableRandomNormalSampling)
+    {
+        randomNormal = sampleRandomNormal(gbufferUV, 100.0);
+    }
 
     // Rotation by 45 degrees
     const mat2 sampleRotate = mat2(
@@ -220,9 +224,15 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
     const float sampleCount = mix(8.0, 4.0, clamp((distanceToCamera - 0.1) / (100 - 0.1), 0.0, 1.0));
     for(int s = 0; s < sampleCount; s++)
     {
+        if (enableRandomNormalSampling)
+        {
+            randomNormal = sampleRandomNormal(randomNormal, 100.0);
+        }
+
+        // Our sampling strategy is 4 sets of 4, distributed evenly across all angles
+        // Slight density increase towards the center.
         for(int i = 0; i < 4; i++)
         {
-            // It's important to scale sample non-uniformly after rotating, since the render area may not be square
             vec2 offset1 = sampleOffsets[i];
 
             if (enableRandomNormalSampling)
@@ -230,13 +240,19 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
                 offset1 = reflect(offset1, randomNormal);
             }
 
+            // Scale after rotating just in case scaling is nonuniform
+            const vec2 offset2 = uvSampleRadius * sampleRotate * offset1;
             offset1 = uvSampleRadius * offset1;
 
-            accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + offset1);
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 0.25 * offset1);
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 0.75 * offset1);
+
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 0.5 * offset2);
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferUV + 1.0 * offset2);
         }
     }
 
-    return clamp(1.0 - accumulatedOcclusion / (floor(sampleCount) * 6.28318530718), 0.0, 1.0);
+    return clamp(1.0 - accumulatedOcclusion / (floor(sampleCount) * 4.0 * 4.0 * 6.28318530718), 0.0, 1.0);
 }
 
 void main()

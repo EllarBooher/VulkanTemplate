@@ -215,9 +215,9 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .lightStrength = 0.0F,
     .ambientStrength = 1.0F,
 
-    .occluderRadius = 0.1F,
+    .occluderRadius = 1.0F,
     .occluderBias = 0.15F,
-    .aoScale = 0.01F,
+    .aoScale = 0.02F,
     .gbufferWhiteOverride = true,
 };
 // NOLINTEND(readability-magic-numbers)
@@ -573,15 +573,21 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             "Enable AO", m_parameters.enableAO, DEFAULT_PARAMETERS.enableAO
         );
         table.rowBoolean(
-            "Enable Random Normal Sampling",
+            "Reflect SSAO samples randomly",
             m_parameters.enableRandomNormalSampling,
             DEFAULT_PARAMETERS.enableRandomNormalSampling
         );
+
+        table.childPropertyBegin(false);
+        ImGui::BeginDisabled(!m_parameters.enableRandomNormalSampling);
         table.rowBoolean(
-            "Normalize Random Normals",
+            "Normalize Reflection Normals",
             m_parameters.normalizeRandomNormals,
             DEFAULT_PARAMETERS.normalizeRandomNormals
         );
+        ImGui::EndDisabled();
+        table.childPropertyEnd();
+
         PropertySliderBehavior constexpr RADIUS_BEHAVIOR{
             .speed = 0.0001F,
         };
