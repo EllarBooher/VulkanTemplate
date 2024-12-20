@@ -1,0 +1,171 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(r16, set = 0, binding = 0) uniform image2D outputAO;
+
+layout(set = 1, binding = 0) uniform sampler2D gbuffer_Diffuse;
+layout(set = 1, binding = 1) uniform sampler2D gbuffer_Specular;
+layout(set = 1, binding = 2) uniform sampler2D gbuffer_Normal;
+layout(set = 1, binding = 3) uniform sampler2D gbuffer_WorldPosition;
+layout(set = 1, binding = 4) uniform sampler2D gbuffer_OcclusionRoughnessMetallic;
+
+layout(rg16_snorm, set = 2, binding = 0) uniform image2D randomNormals;
+
+layout(push_constant) uniform PushConstant
+{
+    vec2 offset;
+    vec2 gBufferCapacity;
+
+    vec4 cameraPosition;
+
+    vec2 extent;
+    float occluderRadius;
+    float occluderBias;
+
+    float aoScale;
+    vec3 padding0;
+} pc;
+
+layout(constant_id = 0) const bool enableRandomNormalSampling = false;
+layout(constant_id = 1) const bool normalizeRandomNormals = false;
+
+struct GBufferTexel
+{
+    vec4 position;
+    vec4 normal;
+    vec4 diffuseColor;
+    vec4 specularColor;
+    vec4 occlusionRoughnessMetallic;
+};
+
+GBufferTexel sampleGBuffer(const vec2 uv)
+{
+    GBufferTexel texel;
+    texel.diffuseColor = texture(gbuffer_Diffuse, uv);
+    texel.specularColor = texture(gbuffer_Specular, uv);
+    texel.normal = texture(gbuffer_Normal, uv);
+    texel.position = texture(gbuffer_WorldPosition, uv);
+    texel.occlusionRoughnessMetallic = texture(gbuffer_OcclusionRoughnessMetallic, uv);
+
+    return texel;
+}
+
+vec2 sampleRandomNormal(vec2 uv, float scale)
+{
+    const ivec2 texelCoord = ivec2(mod(uv * scale, 1.0) * imageSize(randomNormals));
+
+    // Load only xy, since we just need to reflect in 2D screen space
+    vec2 sampledNormal = imageLoad(randomNormals, texelCoord).xy;
+    if(normalizeRandomNormals)
+    {
+        sampledNormal = normalize(sampledNormal);
+    }
+
+    return sampledNormal;
+}
+
+float sampleOcclusion(const GBufferTexel occludee, sampler2D samplerWorldPos, const vec2 uv)
+{
+    // Avoid sampling gbuffer out of bounds
+    const vec2 uvMin = pc.offset / pc.gBufferCapacity;
+    const vec2 uvMax = (pc.offset + pc.extent) / pc.gBufferCapacity;
+    if (uv.x <= uvMin.x || uv.y <= uvMin.y || uv.x >= uvMax.x || uv.y >= uvMax.y)
+    {
+        return 0.0;
+    }
+
+    const vec4 occluderPosition = texture(samplerWorldPos, uv);
+     
+    if(occluderPosition.w < 1.0)
+    {
+        return 0.0;
+    }
+
+    const vec3 v = occluderPosition.xyz - occludee.position.xyz;
+    const float d = length(v);
+
+    if(d < 0.000001)
+    {
+        // TODO: analyze what percent of samples hit this case
+        return 0.0;
+    }
+
+    // The sphere occluder subtends a solid angle from the perspective of the occludee
+    const float occluderSolidAngle = 6.28318530718 * (1.0 - d / sqrt(d * d + pc.occluderRadius * pc.occluderRadius));
+
+    // Normally we need to integrate the occluded light over all v towards the sphere, but we can assume v does not
+    // vary much so we multiply by a single attenuation factor.
+    return clamp(dot(occludee.normal.xyz, normalize(v)) - pc.occluderBias, 0.0, 1.0) * occluderSolidAngle;
+}
+
+float computeAmbientOcclusionTransmittance(GBufferTexel occludee, vec2 gbufferUV, vec3 cameraPosition)
+{
+    float accumulatedOcclusion = 0;
+
+    const float distanceToCamera = distance(cameraPosition, occludee.position.xyz);
+    const float uvSampleRadius = pc.aoScale / distanceToCamera;
+
+    // Rotation by 45 degrees
+    const mat2 sampleRotate = mat2(
+        0.707, -0.707,
+        0.707, 0.707
+    );
+
+    // 4 cardinal directions
+    const vec2 sampleOffsets[4] = vec2[4](
+        vec2(-1.0, 0), 
+        vec2(0, 1.0), 
+        vec2(1.0, 0), 
+        vec2(0, -1.0)
+    );
+
+    // Our sampling strategy is 4 sets of 4, distributed evenly across all angles
+    // Slight density increase towards the center.
+    for(int i = 0; i < 4; i++)
+    {
+        vec2 offset1 = sampleOffsets[i];
+
+        if (enableRandomNormalSampling)
+        {
+            offset1 = reflect(offset1, sampleRandomNormal(gbufferUV, 100.0));
+        }
+
+        // Scale after rotating just in case scaling is nonuniform
+        const vec2 offset2 = uvSampleRadius * sampleRotate * offset1;
+        offset1 = uvSampleRadius * offset1;
+
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.25 * offset1);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.75 * offset1);
+
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.5 * offset2);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 1.0 * offset2);
+    }
+
+    return clamp(1.0 - accumulatedOcclusion / (4.0 * 4.0 * 6.28318530718), 0.0, 1.0);
+}
+
+void main()
+{
+    const vec2 size = imageSize(outputAO);
+    const ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy + pc.offset);
+    if (texelCoord.x >= size.x || texelCoord.y >= size.y)
+    {
+        return;
+    }
+
+    // The uv needs to be offset to avoid floating point errors on texel boundaries
+    const vec2 offset = vec2(0.5, 0.5);
+    const vec2 gbufferUV = (vec2(texelCoord) + offset) / pc.gBufferCapacity;
+
+    GBufferTexel gbufferTexel = sampleGBuffer(gbufferUV);
+
+    // No transparent geometry for now, less than 1.0 alpha indicates background texels
+    if (gbufferTexel.diffuseColor.a < 1.0)
+    {
+        return;
+    }
+
+    const float aoTransmittance = computeAmbientOcclusionTransmittance(gbufferTexel, gbufferUV, pc.cameraPosition.xyz);
+
+    imageStore(outputAO, texelCoord, vec4(aoTransmittance, 0.0, 0.0, 0.0));
+}

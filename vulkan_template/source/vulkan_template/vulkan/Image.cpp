@@ -344,12 +344,30 @@ void Image::recordCopyRect(
     Image& src,
     Image& dst,
     VkImageAspectFlags const aspectMask,
-    VkOffset3D const srcMin,
-    VkOffset3D const srcMax,
-    VkOffset3D const dstMin,
-    VkOffset3D const dstMax
+    VkRect2D const srcRect,
+    VkRect2D const dstRect
 )
 {
+    VkOffset3D const srcMin{
+        .x = srcRect.offset.x, .y = srcRect.offset.y, .z = 0
+    };
+
+    VkOffset3D const srcMax{
+        .x = srcMin.x + static_cast<int32_t>(srcRect.extent.width),
+        .y = srcMin.y + static_cast<int32_t>(srcRect.extent.height),
+        .z = 1,
+    };
+
+    VkOffset3D const dstMin{
+        .x = dstRect.offset.x, .y = dstRect.offset.y, .z = 0
+    };
+
+    VkOffset3D const dstMax{
+        .x = dstMin.x + static_cast<int32_t>(dstRect.extent.width),
+        .y = dstMin.y + static_cast<int32_t>(dstRect.extent.height),
+        .z = 1,
+    };
+
     recordCopyImageToImage(
         cmd,
         src.image(),

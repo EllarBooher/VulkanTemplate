@@ -29,7 +29,7 @@
 
 namespace
 {
-struct PushConstant
+struct LightingPassPushConstant
 {
     glm::vec2 offset;
     glm::vec2 gBufferCapacity;
@@ -38,32 +38,89 @@ struct PushConstant
 
     glm::vec4 lightForward;
 
-    glm::mat4x4 cameraProjView;
+    glm::mat4 cameraProjView;
 
     glm::vec2 extent;
-
-    float occluderRadius;
-    float occluderBias;
-    float aoScale;
     float lightStrength;
-
     float ambientStrength;
-    uint32_t gbufferWhiteOverride;
-    glm::vec2 padding0;
+
+    bool gbufferWhiteOverride;
+    glm::vec3 padding0;
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
-static_assert(sizeof(PushConstant) == 152ULL);
+static_assert(sizeof(LightingPassPushConstant) == 144ULL);
 
-struct SpecializationConstant
+struct LightingPassSpecializationConstant
 {
     uint32_t enableAO{VK_FALSE};
+};
+// NOLINTNEXTLINE(readability-magic-numbers)
+static_assert(sizeof(LightingPassSpecializationConstant) == 4ULL);
+
+struct SSAOPassPushConstant
+{
+    glm::vec2 offset;
+    glm::vec2 gBufferCapacity;
+
+    glm::vec4 cameraPosition;
+
+    glm::vec2 extent;
+    float occluderRadius;
+    float occluderBias;
+
+    float aoScale;
+    glm::vec3 padding0;
+};
+// NOLINTNEXTLINE(readability-magic-numbers)
+static_assert(sizeof(SSAOPassPushConstant) == 64ULL);
+
+struct SSAOPassSpecializationConstant
+{
     uint32_t enableRandomNormalSampling{VK_FALSE};
     uint32_t normalizeRandomNormals{VK_FALSE};
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
-static_assert(sizeof(SpecializationConstant) == 12ULL);
+static_assert(sizeof(SSAOPassSpecializationConstant) == 8ULL);
+} // namespace
 
+template <> struct std::hash<::LightingPassSpecializationConstant>
+{
+    auto operator()(::LightingPassSpecializationConstant const& sc
+    ) const noexcept -> size_t
+    {
+        // A bit silly since these represent bools, but more general is better
+        size_t const h1{std::hash<uint32_t>{}(sc.enableAO)};
+        return h1;
+    }
+};
+
+template <> struct std::hash<::SSAOPassSpecializationConstant>
+{
+    auto operator()(::SSAOPassSpecializationConstant const& sc) const noexcept
+        -> size_t
+    {
+        // A bit silly since these represent bools, but more general is better
+        size_t const h1{std::hash<uint32_t>{}(sc.enableRandomNormalSampling)};
+        size_t const h2{std::hash<uint32_t>{}(sc.normalizeRandomNormals)};
+        return h1 ^ (h2 << 1);
+    }
+};
+
+namespace
+{
 auto allocateRandomNormalsLayout(VkDevice const device)
+    -> std::optional<VkDescriptorSetLayout>
+{
+    VkDescriptorSetLayoutCreateFlags const flags{0};
+    return vkt::DescriptorLayoutBuilder{}
+        .pushBinding(vkt::DescriptorLayoutBuilder::BindingParams{
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+            .bindingFlags = 0,
+        })
+        .build(device, flags);
+}
+auto allocateAOLayout(VkDevice const device)
     -> std::optional<VkDescriptorSetLayout>
 {
     VkDescriptorSetLayoutCreateFlags const flags{0};
@@ -148,7 +205,7 @@ auto createRandomNormalsImage(
     );
 }
 
-auto fillRandomNormalsSet(
+auto fillSingleComputeImageDescriptor(
     VkDevice const device,
     vkt::ImageView& imageView,
     vkt::DescriptorAllocator& descriptorAllocator,
@@ -188,20 +245,340 @@ auto fillRandomNormalsSet(
 
     return setResult;
 }
+auto createLightingPassResources(VkDevice const device)
+    -> std::optional<vkt::LightingPassResources>
+{
+    std::optional<vkt::LightingPassResources> resourcesResult{
+        std::in_place, vkt::LightingPassResources{}
+    };
+    vkt::LightingPassResources& resources{resourcesResult.value()};
+
+    auto const renderTargetLayoutResult{
+        vkt::RenderTarget::allocateSingletonLayout(device)
+    };
+    if (!renderTargetLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate render target descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.renderTargetLayout = renderTargetLayoutResult.value();
+
+    auto const gbufferLayoutResult{
+        vkt::GBuffer::allocateDescriptorSetLayout(device)
+    };
+    if (!gbufferLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.gbufferLayout = gbufferLayoutResult.value();
+
+    auto const randomNormalsLayoutResult{::allocateRandomNormalsLayout(device)};
+    if (!randomNormalsLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.inputAOLayout = randomNormalsLayoutResult.value();
+
+    std::vector<VkDescriptorSetLayout> const layouts{
+        resources.renderTargetLayout,
+        resources.gbufferLayout,
+        resources.inputAOLayout
+    };
+    std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset = 0,
+        .size = sizeof(::LightingPassPushConstant),
+    }};
+
+    std::vector<VkSpecializationMapEntry> const specializationEntries{
+        {.constantID = 0,
+         .offset = offsetof(LightingPassSpecializationConstant, enableAO),
+         .size = sizeof(LightingPassSpecializationConstant::enableAO)}
+    };
+
+    std::vector<LightingPassSpecializationConstant> const
+        specializationConstants{{VK_FALSE}, {VK_TRUE}};
+
+    char const* SHADER_PATH{"shaders/deferred/light.comp.spv"};
+    for (auto const& specialization : specializationConstants)
+    {
+        VkSpecializationInfo const specializationInfo{
+            VKR_ARRAY(specializationEntries),
+            sizeof(LightingPassSpecializationConstant),
+            &specialization
+        };
+        std::optional<VkShaderEXT> const shaderResult = vkt::loadShaderObject(
+            device,
+            SHADER_PATH,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            (VkFlags)0,
+            layouts,
+            ranges,
+            specializationInfo
+        );
+        if (!shaderResult.has_value())
+        {
+            VKT_ERROR("Failed to compile shader.");
+            return std::nullopt;
+        }
+        size_t const hash{std::hash<LightingPassSpecializationConstant>{
+        }(specialization)};
+        resources.shaderBySpecializationHash[hash] = shaderResult.value();
+    }
+
+    VkPipelineLayoutCreateInfo const layoutCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+
+        .flags = 0,
+
+        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+        .pSetLayouts = layouts.data(),
+
+        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+        .pPushConstantRanges = ranges.data(),
+    };
+
+    if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
+            device, &layoutCreateInfo, nullptr, &resources.shaderLayout
+        )};
+        pipelineLayoutResult != VK_SUCCESS)
+    {
+        VKT_LOG_VK(pipelineLayoutResult, "Failed to create pipeline layout.");
+        return std::nullopt;
+    }
+
+    return resourcesResult;
+}
+
+auto createSSAOPassResources(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::DescriptorAllocator& descriptorAllocator,
+    vkt::ImmediateSubmissionQueue const& imageUploadQueue
+) -> std::optional<vkt::SSAOPassResources>
+{
+    std::optional<vkt::SSAOPassResources> resourcesResult{
+        std::in_place, vkt::SSAOPassResources{}
+    };
+    vkt::SSAOPassResources& resources{resourcesResult.value()};
+
+    auto const outputAOLayoutResult{::allocateAOLayout(device)};
+    if (!outputAOLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate render target descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.outputAOLayout = outputAOLayoutResult.value();
+
+    auto const gbufferLayoutResult{
+        vkt::GBuffer::allocateDescriptorSetLayout(device)
+    };
+    if (!gbufferLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.gbufferLayout = gbufferLayoutResult.value();
+
+    auto const randomNormalsLayoutResult{::allocateRandomNormalsLayout(device)};
+    if (!randomNormalsLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.randomNormalsLayout = randomNormalsLayoutResult.value();
+
+    std::vector<VkDescriptorSetLayout> const layouts{
+        resources.outputAOLayout,
+        resources.gbufferLayout,
+        resources.randomNormalsLayout
+    };
+    std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset = 0,
+        .size = sizeof(::SSAOPassPushConstant),
+    }};
+
+    std::vector<VkSpecializationMapEntry> const specializationEntries{
+        {.constantID = 0,
+         .offset = offsetof(
+             SSAOPassSpecializationConstant, enableRandomNormalSampling
+         ),
+         .size =
+             sizeof(SSAOPassSpecializationConstant::enableRandomNormalSampling)
+        },
+        {.constantID = 1,
+         .offset =
+             offsetof(SSAOPassSpecializationConstant, normalizeRandomNormals),
+         .size = sizeof(SSAOPassSpecializationConstant::normalizeRandomNormals)}
+    };
+
+    std::vector<SSAOPassSpecializationConstant> const specializationConstants{
+        {VK_FALSE, VK_FALSE},
+        {VK_FALSE, VK_TRUE},
+        {VK_TRUE, VK_FALSE},
+        {VK_TRUE, VK_TRUE}
+    };
+
+    char const* SHADER_PATH{"shaders/deferred/ssao.comp.spv"};
+    for (auto const& specialization : specializationConstants)
+    {
+        VkSpecializationInfo const specializationInfo{
+            VKR_ARRAY(specializationEntries),
+            sizeof(SSAOPassSpecializationConstant),
+            &specialization
+        };
+        std::optional<VkShaderEXT> const shaderResult = vkt::loadShaderObject(
+            device,
+            SHADER_PATH,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            (VkFlags)0,
+            layouts,
+            ranges,
+            specializationInfo
+        );
+        if (!shaderResult.has_value())
+        {
+            VKT_ERROR("Failed to compile shader.");
+            return std::nullopt;
+        }
+        size_t const hash{std::hash<SSAOPassSpecializationConstant>{
+        }(specialization)};
+        resources.shaderBySpecializationHash[hash] = shaderResult.value();
+    }
+
+    VkPipelineLayoutCreateInfo const layoutCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+
+        .flags = 0,
+
+        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+        .pSetLayouts = layouts.data(),
+
+        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+        .pPushConstantRanges = ranges.data(),
+    };
+
+    if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
+            device, &layoutCreateInfo, nullptr, &resources.shaderLayout
+        )};
+        pipelineLayoutResult != VK_SUCCESS)
+    {
+        VKT_LOG_VK(pipelineLayoutResult, "Failed to create pipeline layout.");
+        return std::nullopt;
+    }
+
+    auto randomNormalsResult{
+        ::createRandomNormalsImage(device, allocator, imageUploadQueue)
+    };
+    if (!randomNormalsResult.has_value())
+    {
+        VKT_ERROR(
+            "Failed to create random normals image for Lighting Pass pipeline."
+        );
+        return std::nullopt;
+    }
+    resources.randomNormals =
+        std::make_unique<vkt::ImageView>(std::move(randomNormalsResult).value()
+        );
+
+    auto randomNormalsSetResult{::fillSingleComputeImageDescriptor(
+        device,
+        *resources.randomNormals,
+        descriptorAllocator,
+        resources.randomNormalsLayout
+    )};
+    if (!randomNormalsSetResult.has_value())
+    {
+        VKT_ERROR("Failed to fill random normals descriptor set for Lighting "
+                  "Pass pipeline.");
+        return std::nullopt;
+    }
+    resources.randomNormalsSet = randomNormalsSetResult.value();
+
+    // Must be same size as gbuffer
+    VkExtent2D constexpr TEXTURE_MAX{4096, 4096};
+
+    // STORAGE for compute load/store
+    // TRANSFER_DST for clear
+    // TRANSFER_SRC for copying to output texture for visualization purposes
+    VkImageUsageFlags constexpr AO_USAGE{
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+    };
+    auto ambientOcclusionResult{vkt::ImageView::allocate(
+        device,
+        allocator,
+        vkt::ImageAllocationParameters{
+            .extent = TEXTURE_MAX,
+            .format = VK_FORMAT_R16_UNORM,
+            .usageFlags = AO_USAGE,
+        },
+        vkt::ImageViewAllocationParameters{}
+    )};
+    if (!ambientOcclusionResult.has_value())
+    {
+        VKT_ERROR("Failed to create ambient occlusion image.");
+        return std::nullopt;
+    }
+    resources.ambientOcclusion = std::make_unique<vkt::ImageView>(
+        std::move(ambientOcclusionResult).value()
+    );
+
+    auto ambientOcclusionSetResult{::fillSingleComputeImageDescriptor(
+        device,
+        *resources.ambientOcclusion,
+        descriptorAllocator,
+        resources.outputAOLayout
+    )};
+    if (!ambientOcclusionSetResult.has_value())
+    {
+        VKT_ERROR("Failed to fill ambient occlusion output set for Lighting "
+                  "Pass pipeline.");
+        return std::nullopt;
+    }
+    resources.ambientOcclusionSet = ambientOcclusionSetResult.value();
+
+    return resourcesResult;
+}
+
+void cleanResources(
+    VkDevice const device, vkt::LightingPassResources& resources
+)
+{
+    vkDestroyDescriptorSetLayout(device, resources.renderTargetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, resources.gbufferLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, resources.inputAOLayout, nullptr);
+
+    for (auto const& [hash, shader] : resources.shaderBySpecializationHash)
+    {
+        vkDestroyShaderEXT(device, shader, nullptr);
+    }
+
+    vkDestroyPipelineLayout(device, resources.shaderLayout, nullptr);
+}
+
+void cleanResources(VkDevice const device, vkt::SSAOPassResources& resources)
+{
+    vkDestroyDescriptorSetLayout(device, resources.outputAOLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, resources.gbufferLayout, nullptr);
+    vkDestroyDescriptorSetLayout(
+        device, resources.randomNormalsLayout, nullptr
+    );
+
+    for (auto const& [hash, shader] : resources.shaderBySpecializationHash)
+    {
+        vkDestroyShaderEXT(device, shader, nullptr);
+    }
+
+    vkDestroyPipelineLayout(device, resources.shaderLayout, nullptr);
+}
 
 } // namespace
-
-template <> struct std::hash<::SpecializationConstant>
-{
-    auto operator()(::SpecializationConstant const& sc) const noexcept -> size_t
-    {
-        // A bit silly since these represent bools, but more general is better
-        size_t const h1{std::hash<uint32_t>{}(sc.enableAO)};
-        size_t const h2{std::hash<uint32_t>{}(sc.enableRandomNormalSampling)};
-        size_t const h3{std::hash<uint32_t>{}(sc.normalizeRandomNormals)};
-        return h1 ^ (h2 << 1) ^ (h3 << 2);
-    }
-};
 
 namespace vkt
 {
@@ -225,21 +602,10 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
 auto LightingPass::operator=(LightingPass&& other) -> LightingPass&
 {
     m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-
-    m_renderTargetLayout =
-        std::exchange(other.m_renderTargetLayout, VK_NULL_HANDLE);
-    m_gbufferLayout = std::exchange(other.m_gbufferLayout, VK_NULL_HANDLE);
-    m_randomNormalsLayout =
-        std::exchange(other.m_randomNormalsLayout, VK_NULL_HANDLE);
-
-    m_randomNormalsSet =
-        std::exchange(other.m_randomNormalsSet, VK_NULL_HANDLE);
-    m_randomNormals = std::exchange(other.m_randomNormals, nullptr);
     m_descriptorAllocator = std::exchange(other.m_descriptorAllocator, nullptr);
 
-    m_shadersBySpecializationHash =
-        std::exchange(other.m_shadersBySpecializationHash, {});
-    m_shaderLayout = std::exchange(other.m_shaderLayout, VK_NULL_HANDLE);
+    m_lightingPassResources = std::exchange(other.m_lightingPassResources, {});
+    m_ssaoPassResources = std::exchange(other.m_ssaoPassResources, {});
 
     return *this;
 }
@@ -254,16 +620,8 @@ LightingPass::~LightingPass()
         return;
     }
 
-    vkDestroyDescriptorSetLayout(m_device, m_renderTargetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(m_device, m_gbufferLayout, nullptr);
-    vkDestroyDescriptorSetLayout(m_device, m_randomNormalsLayout, nullptr);
-
-    for (auto const& [hash, shader] : m_shadersBySpecializationHash)
-    {
-        vkDestroyShaderEXT(m_device, shader, nullptr);
-    }
-
-    vkDestroyPipelineLayout(m_device, m_shaderLayout, nullptr);
+    ::cleanResources(m_device, m_lightingPassResources);
+    ::cleanResources(m_device, m_ssaoPassResources);
 }
 auto LightingPass::create(
     VkDevice const device,
@@ -278,136 +636,7 @@ auto LightingPass::create(
     LightingPass& lightingPass{lightingPassResult.value()};
     lightingPass.m_device = device;
 
-    auto const renderTargetLayoutResult{
-        vkt::RenderTarget::allocateSingletonLayout(device)
-    };
-    if (!renderTargetLayoutResult.has_value())
-    {
-        VKT_ERROR("Failed to allocate render target descriptor set layout.");
-        return std::nullopt;
-    }
-    lightingPass.m_renderTargetLayout = renderTargetLayoutResult.value();
-
-    auto const gbufferLayoutResult{
-        vkt::GBuffer::allocateDescriptorSetLayout(device)
-    };
-    if (!gbufferLayoutResult.has_value())
-    {
-        VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
-        return std::nullopt;
-    }
-    lightingPass.m_gbufferLayout = gbufferLayoutResult.value();
-
-    auto const randomNormalsLayoutResult{::allocateRandomNormalsLayout(device)};
-    if (!randomNormalsLayoutResult.has_value())
-    {
-        VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
-        return std::nullopt;
-    }
-    lightingPass.m_randomNormalsLayout = randomNormalsLayoutResult.value();
-
-    std::vector<VkDescriptorSetLayout> const layouts{
-        lightingPass.m_renderTargetLayout,
-        lightingPass.m_gbufferLayout,
-        lightingPass.m_randomNormalsLayout
-    };
-    std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .offset = 0,
-        .size = sizeof(::PushConstant),
-    }};
-
-    // light.comp snippet
-    //
-    // layout(constant_id = 0) const bool includeAO = false;
-    //
-    std::vector<VkSpecializationMapEntry> const specializationEntries{
-        {.constantID = 0,
-         .offset = offsetof(SpecializationConstant, enableAO),
-         .size = sizeof(SpecializationConstant::enableAO)},
-        {.constantID = 1,
-         .offset = offsetof(SpecializationConstant, enableRandomNormalSampling),
-         .size = sizeof(SpecializationConstant::enableRandomNormalSampling)},
-        {.constantID = 2,
-         .offset = offsetof(SpecializationConstant, normalizeRandomNormals),
-         .size = sizeof(SpecializationConstant::normalizeRandomNormals)}
-    };
-
-    // Some combinations of features don't make sense, such as disabling AO and
-    // enabling any other features, but there is no real need to worry about
-    // that.
-    std::vector<SpecializationConstant> const specializationConstants{
-        {VK_FALSE, VK_FALSE, VK_FALSE},
-        {VK_FALSE, VK_FALSE, VK_TRUE},
-        {VK_FALSE, VK_TRUE, VK_FALSE},
-        {VK_FALSE, VK_TRUE, VK_TRUE},
-        {VK_TRUE, VK_FALSE, VK_FALSE},
-        {VK_TRUE, VK_FALSE, VK_TRUE},
-        {VK_TRUE, VK_TRUE, VK_FALSE},
-        {VK_TRUE, VK_TRUE, VK_TRUE}
-    };
-    char const* SHADER_PATH{"shaders/deferred/light.comp.spv"};
-    for (auto const& specialization : specializationConstants)
-    {
-        VkSpecializationInfo const specializationInfo{
-            VKR_ARRAY(specializationEntries),
-            sizeof(SpecializationConstant),
-            &specialization
-        };
-        std::optional<VkShaderEXT> const shaderResult = loadShaderObject(
-            device,
-            SHADER_PATH,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            (VkFlags)0,
-            layouts,
-            ranges,
-            specializationInfo
-        );
-        if (!shaderResult.has_value())
-        {
-            VKT_ERROR("Failed to compile shader.");
-            return std::nullopt;
-        }
-        size_t const hash{std::hash<SpecializationConstant>{}(specialization)};
-        lightingPass.m_shadersBySpecializationHash[hash] = shaderResult.value();
-    }
-
-    VkPipelineLayoutCreateInfo const layoutCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
-
-        .flags = 0,
-
-        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts = layouts.data(),
-
-        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-        .pPushConstantRanges = ranges.data(),
-    };
-
-    if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
-            device, &layoutCreateInfo, nullptr, &lightingPass.m_shaderLayout
-        )};
-        pipelineLayoutResult != VK_SUCCESS)
-    {
-        VKT_LOG_VK(pipelineLayoutResult, "Failed to create pipeline layout.");
-        return std::nullopt;
-    }
-
-    auto randomNormalsResult{
-        ::createRandomNormalsImage(device, allocator, submissionQueue)
-    };
-    if (!randomNormalsResult.has_value())
-    {
-        VKT_ERROR(
-            "Failed to create random normals image for Lighting Pass pipeline."
-        );
-        return std::nullopt;
-    }
-    lightingPass.m_randomNormals =
-        std::make_unique<ImageView>(std::move(randomNormalsResult).value());
-
-    size_t constexpr MAX_SETS{1};
+    size_t constexpr MAX_SETS{10ULL};
     std::vector<DescriptorAllocator::PoolSizeRatio> POOL_RATIOS{{
         .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
         .ratio = 1.0F,
@@ -425,93 +654,197 @@ auto LightingPass::create(
         std::move(descriptorAllocatorResult)
     );
 
-    auto randomNormalsSetResult{::fillRandomNormalsSet(
-        device,
-        *lightingPass.m_randomNormals,
-        *lightingPass.m_descriptorAllocator,
-        lightingPass.m_randomNormalsLayout
-    )};
-    if (!randomNormalsSetResult.has_value())
+    auto lightingPassResourcesResult{
+        ::createLightingPassResources(lightingPass.m_device)
+    };
+    if (!lightingPassResourcesResult.has_value())
     {
-        VKT_ERROR("Failed to fill random normals descriptor set for Lighting "
-                  "Pass pipeline.");
+        VKT_ERROR("Failed to create lighting pass resources.");
         return std::nullopt;
     }
-    lightingPass.m_randomNormalsSet = randomNormalsSetResult.value();
+    lightingPass.m_lightingPassResources =
+        std::move(lightingPassResourcesResult).value();
+
+    auto ssaoPassResourcesResult{::createSSAOPassResources(
+        lightingPass.m_device,
+        allocator,
+        *lightingPass.m_descriptorAllocator,
+        submissionQueue
+    )};
+    if (!ssaoPassResourcesResult.has_value())
+    {
+        VKT_ERROR("Failed to create lighting pass resources.");
+        return std::nullopt;
+    }
+    lightingPass.m_ssaoPassResources =
+        std::move(ssaoPassResourcesResult).value();
 
     return lightingPassResult;
 }
-void LightingPass::recordDraw(
+} // namespace vkt
+
+namespace
+{
+void recordDrawSSAO(
     VkCommandBuffer const cmd,
-    RenderTarget& texture,
-    GBuffer const& gbuffer,
-    Scene const& scene
+    vkt::GBuffer const& gbuffer,
+    vkt::SSAOPassResources& resources,
+    vkt::LightingPassParameters const& parameters,
+    vkt::Scene const& scene
 )
 {
-    assert(
-        texture.size() == gbuffer.size()
-        && "GBuffer and render target must be same size."
-    );
+    uint32_t constexpr WORKGROUP_SIZE{16};
+    VkExtent2D const gBufferCapacity{gbuffer.capacity().value()};
 
     VkShaderStageFlagBits const stage{VK_SHADER_STAGE_COMPUTE_BIT};
     std::vector<VkDescriptorSet> descriptors{
-        texture.singletonDescriptor(), gbuffer.descriptor(), m_randomNormalsSet
+        resources.ambientOcclusionSet,
+        gbuffer.descriptor(),
+        resources.randomNormalsSet
     };
 
-    texture.color().recordTransitionBarriered(cmd, VK_IMAGE_LAYOUT_GENERAL);
-
+    resources.ambientOcclusion->recordTransitionBarriered(
+        cmd, VK_IMAGE_LAYOUT_GENERAL
+    );
+    // Clear as black so geometry shows up as white with AO as grey/black
     VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
-    texture.color().image().recordClearEntireColor(cmd, &clearColor);
+    resources.ambientOcclusion->image().recordClearEntireColor(
+        cmd, &clearColor
+    );
 
     gbuffer.recordTransitionImages(
         cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
 
-    SpecializationConstant const specializationConstant{
-        .enableAO = m_parameters.enableAO ? VK_TRUE : VK_FALSE,
+    SSAOPassSpecializationConstant const specializationConstant{
         .enableRandomNormalSampling =
-            m_parameters.enableRandomNormalSampling ? VK_TRUE : VK_FALSE,
+            parameters.enableRandomNormalSampling ? VK_TRUE : VK_FALSE,
         .normalizeRandomNormals =
-            m_parameters.normalizeRandomNormals ? VK_TRUE : VK_FALSE,
+            parameters.normalizeRandomNormals ? VK_TRUE : VK_FALSE,
     };
 
-    VkShaderEXT const shader{m_shadersBySpecializationHash.at(
-        std::hash<SpecializationConstant>{}(specializationConstant)
+    VkShaderEXT const shader{resources.shaderBySpecializationHash.at(
+        std::hash<SSAOPassSpecializationConstant>{}(specializationConstant)
     )};
     vkCmdBindShadersEXT(cmd, 1, &stage, &shader);
 
     vkCmdBindDescriptorSets(
         cmd,
         VK_PIPELINE_BIND_POINT_COMPUTE,
-        m_shaderLayout,
+        resources.shaderLayout,
         0,
         VKR_ARRAY(descriptors),
         VKR_ARRAY_NONE
     );
 
-    uint32_t constexpr WORKGROUP_SIZE{16};
-
-    VkExtent2D const gBufferCapacity{gbuffer.capacity().value()};
-
+    VkRect2D const drawRect{gbuffer.size()};
     auto const aspectRatio{
-        static_cast<float>(vkt::aspectRatio(texture.size().extent).value())
+        static_cast<float>(vkt::aspectRatio(drawRect.extent).value())
+    };
+    SSAOPassPushConstant const pc{
+        .offset =
+            glm::vec2{
+                static_cast<float>(drawRect.offset.x),
+                static_cast<float>(drawRect.offset.y)
+            },
+        .gBufferCapacity =
+            glm::vec2{
+                static_cast<float>(gBufferCapacity.width),
+                static_cast<float>(gBufferCapacity.height)
+            },
+        .cameraPosition = glm::vec4{scene.camera().position, 1.0F},
+        .extent =
+            glm::vec2{
+                static_cast<float>(drawRect.extent.width),
+                static_cast<float>(drawRect.extent.height)
+            },
+        .occluderRadius = parameters.occluderRadius,
+        .occluderBias = parameters.occluderBias,
+        .aoScale = parameters.aoScale,
     };
 
+    vkCmdPushConstants(
+        cmd,
+        resources.shaderLayout,
+        VK_SHADER_STAGE_COMPUTE_BIT,
+        0,
+        sizeof(pc),
+        &pc
+    );
+
+    vkt::computeDispatch(
+        cmd,
+        VkExtent3D{drawRect.extent.width, drawRect.extent.height, 1},
+        WORKGROUP_SIZE
+    );
+}
+
+void recordDrawLighting(
+    VkCommandBuffer const cmd,
+    vkt::RenderTarget& outputTexture,
+    vkt::GBuffer const& gbuffer,
+    VkDescriptorSet const ambientOcclusion,
+    vkt::LightingPassResources& resources,
+    vkt::LightingPassParameters const& parameters,
+    vkt::Scene const& scene
+)
+{
+    uint32_t constexpr WORKGROUP_SIZE{16};
+    VkExtent2D const gBufferCapacity{gbuffer.capacity().value()};
+    VkRect2D const drawRect{outputTexture.size()};
+    auto const aspectRatio{
+        static_cast<float>(vkt::aspectRatio(drawRect.extent).value())
+    };
+
+    VkShaderStageFlagBits const stage{VK_SHADER_STAGE_COMPUTE_BIT};
+    std::vector<VkDescriptorSet> descriptors{
+        outputTexture.singletonDescriptor(),
+        gbuffer.descriptor(),
+        ambientOcclusion
+    };
+
+    outputTexture.color().recordTransitionBarriered(
+        cmd, VK_IMAGE_LAYOUT_GENERAL
+    );
+
+    VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
+    outputTexture.color().image().recordClearEntireColor(cmd, &clearColor);
+
+    gbuffer.recordTransitionImages(
+        cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+
+    LightingPassSpecializationConstant const specializationConstant{
+        .enableAO = parameters.enableAO ? VK_TRUE : VK_FALSE,
+    };
+    VkShaderEXT const shader{resources.shaderBySpecializationHash.at(
+        std::hash<LightingPassSpecializationConstant>{}(specializationConstant)
+    )};
+    vkCmdBindShadersEXT(cmd, 1, &stage, &shader);
+
+    vkCmdBindDescriptorSets(
+        cmd,
+        VK_PIPELINE_BIND_POINT_COMPUTE,
+        resources.shaderLayout,
+        0,
+        VKR_ARRAY(descriptors),
+        VKR_ARRAY_NONE
+    );
+
     auto const X{glm::angleAxis(
-        m_parameters.lightAxisAngles.x, glm::vec3{1.0F, 0.0F, 0.0F}
+        parameters.lightAxisAngles.x, glm::vec3{1.0F, 0.0F, 0.0F}
     )};
     auto const Y{glm::angleAxis(
-        m_parameters.lightAxisAngles.y, glm::vec3{0.0F, 1.0F, 0.0F}
+        parameters.lightAxisAngles.y, glm::vec3{0.0F, 1.0F, 0.0F}
     )};
     auto const Z{glm::angleAxis(
-        m_parameters.lightAxisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F}
+        parameters.lightAxisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F}
     )};
     glm::vec4 const lightForward{
         glm::toMat4(Z * X * Y) * glm::vec4(0.0, 0.0, 1.0, 0.0)
     };
 
-    VkRect2D const drawRect{texture.size()};
-    ::PushConstant const pc{
+    LightingPassPushConstant const pc{
         .offset =
             glm::vec2{
                 static_cast<float>(drawRect.offset.x),
@@ -530,21 +863,17 @@ void LightingPass::recordDraw(
                 static_cast<float>(drawRect.extent.width),
                 static_cast<float>(drawRect.extent.height)
             },
-        .occluderRadius = m_parameters.occluderRadius,
-        .occluderBias = m_parameters.occluderBias,
-        .aoScale = m_parameters.aoScale,
-        .lightStrength = m_parameters.lightStrength,
-        .ambientStrength = m_parameters.ambientStrength,
-        .gbufferWhiteOverride =
-            m_parameters.gbufferWhiteOverride ? VK_TRUE : VK_FALSE,
+        .lightStrength = parameters.lightStrength,
+        .ambientStrength = parameters.ambientStrength,
+        .gbufferWhiteOverride = parameters.gbufferWhiteOverride
     };
 
     vkCmdPushConstants(
         cmd,
-        m_shaderLayout,
+        resources.shaderLayout,
         VK_SHADER_STAGE_COMPUTE_BIT,
         0,
-        sizeof(::PushConstant),
+        sizeof(pc),
         &pc
     );
 
@@ -553,8 +882,72 @@ void LightingPass::recordDraw(
         VkExtent3D{drawRect.extent.width, drawRect.extent.height, 1},
         WORKGROUP_SIZE
     );
+}
 
-    vkCmdBindShadersEXT(cmd, 1, &stage, nullptr);
+} // namespace
+
+namespace vkt
+{
+void LightingPass::recordDraw(
+    VkCommandBuffer const cmd,
+    RenderTarget& texture,
+    GBuffer const& gbuffer,
+    Scene const& scene
+)
+{
+    assert(
+        texture.size() == gbuffer.size()
+        && "GBuffer and render target must be same size."
+    );
+
+    if (m_parameters.enableAO)
+    {
+        recordDrawSSAO(cmd, gbuffer, m_ssaoPassResources, m_parameters, scene);
+    }
+    else
+    {
+        m_ssaoPassResources.ambientOcclusion->recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_GENERAL
+        );
+        // Clear as black so geometry shows up as white with AO as grey/black
+        VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
+        m_ssaoPassResources.ambientOcclusion->image().recordClearEntireColor(
+            cmd, &clearColor
+        );
+    }
+
+    if (m_parameters.copyAOToOutputTexture)
+    {
+        texture.color().recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        );
+        m_ssaoPassResources.ambientOcclusion->recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        );
+
+        vkt::Image::recordCopyRect(
+            cmd,
+            m_ssaoPassResources.ambientOcclusion->image(),
+            texture.color().image(),
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            texture.size(),
+            texture.size()
+        );
+    }
+    else
+    {
+        recordDrawLighting(
+            cmd,
+            texture,
+            gbuffer,
+            m_ssaoPassResources.ambientOcclusionSet,
+            m_lightingPassResources,
+            m_parameters,
+            scene
+        );
+    }
+
+    // vkCmdBindShadersEXT(cmd, 1, &stage, nullptr);
 }
 void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
 {
@@ -621,9 +1014,9 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             SCALE_BEHAVIOR
         );
         table.rowBoolean(
-            "Override GBuffer color as white",
-            m_parameters.gbufferWhiteOverride,
-            DEFAULT_PARAMETERS.gbufferWhiteOverride
+            "Copy AO to Output Texture",
+            m_parameters.copyAOToOutputTexture,
+            DEFAULT_PARAMETERS.copyAOToOutputTexture
         );
 
         table.end();
@@ -660,6 +1053,11 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             m_parameters.ambientStrength,
             DEFAULT_PARAMETERS.ambientStrength,
             LIGHT_STRENGTH_BEHAVIOR
+        );
+        table.rowBoolean(
+            "Override Albedo/Specular as White",
+            m_parameters.gbufferWhiteOverride,
+            DEFAULT_PARAMETERS.gbufferWhiteOverride
         );
 
         table.end();

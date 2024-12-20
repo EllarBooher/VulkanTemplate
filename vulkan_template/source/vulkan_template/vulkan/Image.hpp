@@ -141,10 +141,8 @@ public:
         Image& src,
         Image& dst,
         VkImageAspectFlags,
-        VkOffset3D srcMin,
-        VkOffset3D srcMax,
-        VkOffset3D dstMin,
-        VkOffset3D dstMax
+        VkRect2D const srcRect,
+        VkRect2D const dstRect
     );
 
 private:

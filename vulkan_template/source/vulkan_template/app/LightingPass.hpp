@@ -38,8 +38,59 @@ struct LightingPassParameters
     float occluderBias;
     float aoScale;
 
-    // When sampling gbuffer, read diffuse and specular as pure white vec4(1.0)
+    bool copyAOToOutputTexture;
+
+    // When sampling gbuffer for albedo/specular, read as pure white vec4(1.0)
     bool gbufferWhiteOverride;
+};
+
+struct LightingPassResources
+{
+    // layout(rgba16, set = 0, binding = 0) uniform image2D image;
+    //
+    // layout(set = 1, binding = 0) uniform sampler2D gbuffer_Diffuse;
+    // layout(set = 1, binding = 1) uniform sampler2D gbuffer_Specular;
+    // layout(set = 1, binding = 2) uniform sampler2D gbuffer_Normal;
+    // layout(set = 1, binding = 3) uniform sampler2D gbuffer_WorldPosition;
+    // layout(set = 1, binding = 4) uniform sampler2D
+    // gbuffer_OcclusionRoughnessMetallic;
+    //
+    // layout(r16, set = 2, binding = 0) uniform image2D inputAO;
+
+    VkDescriptorSetLayout renderTargetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout gbufferLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout inputAOLayout{VK_NULL_HANDLE};
+
+    std::unordered_map<size_t, VkShaderEXT> shaderBySpecializationHash{};
+    VkPipelineLayout shaderLayout{VK_NULL_HANDLE};
+};
+
+struct SSAOPassResources
+{
+    // layout(r16, set = 0, binding = 0) uniform image2D outputAO;
+    //
+    // layout(set = 1, binding = 0) uniform sampler2D gbuffer_Diffuse;
+    // layout(set = 1, binding = 1) uniform sampler2D gbuffer_Specular;
+    // layout(set = 1, binding = 2) uniform sampler2D gbuffer_Normal;
+    // layout(set = 1, binding = 3) uniform sampler2D gbuffer_WorldPosition;
+    // layout(set = 1, binding = 4) uniform sampler2D
+    // gbuffer_OcclusionRoughnessMetallic;
+    //
+    // layout(rg16_snorm, set = 2, binding = 0) uniform image2D
+    // randomNormals;
+
+    VkDescriptorSetLayout outputAOLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout gbufferLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout randomNormalsLayout{VK_NULL_HANDLE};
+
+    VkDescriptorSet ambientOcclusionSet{VK_NULL_HANDLE};
+    std::unique_ptr<ImageView> ambientOcclusion{};
+
+    VkDescriptorSet randomNormalsSet{VK_NULL_HANDLE};
+    std::unique_ptr<ImageView> randomNormals{};
+
+    std::unordered_map<size_t, VkShaderEXT> shaderBySpecializationHash{};
+    VkPipelineLayout shaderLayout{VK_NULL_HANDLE};
 };
 
 struct LightingPass
@@ -64,30 +115,12 @@ private:
     LightingPass() = default;
 
     VkDevice m_device{VK_NULL_HANDLE};
-
-    // layout(rgba16, set = 0, binding = 0) uniform image2D image;
-    //
-    // layout(set = 1, binding = 0) uniform sampler2D gbuffer_Diffuse;
-    // layout(set = 1, binding = 1) uniform sampler2D gbuffer_Specular;
-    // layout(set = 1, binding = 2) uniform sampler2D gbuffer_Normal;
-    // layout(set = 1, binding = 3) uniform sampler2D gbuffer_WorldPosition;
-    // layout(set = 1, binding = 4) uniform sampler2D
-    // gbuffer_OcclusionRoughnessMetallic;
-
-    // layout(rg16_snorm, set = 2, binding = 0) uniform image2D randomNormals;
-
-    VkDescriptorSetLayout m_renderTargetLayout{VK_NULL_HANDLE};
-    VkDescriptorSetLayout m_gbufferLayout{VK_NULL_HANDLE};
-    VkDescriptorSetLayout m_randomNormalsLayout{VK_NULL_HANDLE};
-
-    VkDescriptorSet m_randomNormalsSet{VK_NULL_HANDLE};
-    std::unique_ptr<ImageView> m_randomNormals{};
     std::unique_ptr<DescriptorAllocator> m_descriptorAllocator{};
 
     static LightingPassParameters DEFAULT_PARAMETERS;
     LightingPassParameters m_parameters{DEFAULT_PARAMETERS};
 
-    std::unordered_map<size_t, VkShaderEXT> m_shadersBySpecializationHash{};
-    VkPipelineLayout m_shaderLayout{VK_NULL_HANDLE};
+    LightingPassResources m_lightingPassResources{};
+    SSAOPassResources m_ssaoPassResources{};
 };
 } // namespace vkt
