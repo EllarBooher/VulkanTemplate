@@ -45,7 +45,8 @@ struct Resources
     vkt::GBufferPipeline gbufferPipeline;
     vkt::LightingPass lightingPass;
     vkt::PostProcess postProcess;
-    vkt::GBuffer gbuffer;
+    vkt::GBuffer gbufferFrontFace;
+    vkt::GBuffer gbufferBackFace;
     vkt::Scene scene;
 };
 struct Config
@@ -224,14 +225,24 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
-    VKT_INFO("Creating GBuffer...");
+    VKT_INFO("Creating GBuffers...");
 
-    std::optional<vkt::GBuffer> gbufferResult{vkt::GBuffer::create(
-        graphicsContext.device(), graphicsContext.allocator(), TEXTURE_MAX
-    )};
-    if (!gbufferResult.has_value())
+    std::vector<vkt::GBuffer> gbuffers{};
+    for (size_t i{0}; i < 2; i++)
     {
-        VKT_ERROR("Failed to create GBuffer Pipeline.");
+        std::optional<vkt::GBuffer> gbufferResult{vkt::GBuffer::create(
+            graphicsContext.device(), graphicsContext.allocator(), TEXTURE_MAX
+        )};
+        if (!gbufferResult.has_value())
+        {
+            VKT_ERROR("Failed to create GBuffer.");
+            return std::nullopt;
+        }
+        gbuffers.emplace_back(std::move(gbufferResult).value());
+    }
+    if (gbuffers.size() != 2)
+    {
+        VKT_ERROR("Failed to create GBuffers.");
         return std::nullopt;
     }
 
@@ -284,7 +295,8 @@ auto initialize() -> std::optional<Resources>
         .gbufferPipeline = std::move(gbufferPipelineResult).value(),
         .lightingPass = std::move(lightingPassResult).value(),
         .postProcess = std::move(postProcessResult).value(),
-        .gbuffer = std::move(gbufferResult).value(),
+        .gbufferFrontFace = std::move(gbuffers[0]),
+        .gbufferBackFace = std::move(gbuffers[1]),
         .scene = std::move(sceneResult).value()
     };
 }
@@ -302,7 +314,8 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
     vkt::FrameBuffer& frameBuffer{resources.frameBuffer};
     vkt::UILayer& uiLayer{resources.uiLayer};
     // vkt::Renderer& renderer{resources.renderer};
-    vkt::GBuffer& gbuffer{resources.gbuffer};
+    vkt::GBuffer& gbufferFrontFace{resources.gbufferFrontFace};
+    vkt::GBuffer& gbufferBackFace{resources.gbufferBackFace};
     vkt::GBufferPipeline& gbufferPipeline{resources.gbufferPipeline};
     vkt::LightingPass& lightingPass{resources.lightingPass};
     vkt::PostProcess& postProcess{resources.postProcess};
@@ -338,10 +351,21 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
             //     cmd, sceneViewport.value().texture, resources.meshes[0]
             //);
             gbufferPipeline.recordDraw(
-                cmd, sceneViewport.value().texture, gbuffer, scene
+                cmd,
+                sceneViewport.value().texture,
+                gbufferFrontFace,
+                scene,
+                false
+            );
+            gbufferPipeline.recordDraw(
+                cmd, sceneViewport.value().texture, gbufferBackFace, scene, true
             );
             lightingPass.recordDraw(
-                cmd, sceneViewport.value().texture, gbuffer, scene
+                cmd,
+                sceneViewport.value().texture,
+                gbufferFrontFace,
+                gbufferBackFace,
+                scene
             );
         }
 

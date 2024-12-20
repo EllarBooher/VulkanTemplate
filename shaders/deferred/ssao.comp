@@ -3,13 +3,19 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(r16, set = 0, binding = 0) uniform image2D outputAO;
 
-layout(set = 1, binding = 0) uniform sampler2D gbuffer_Diffuse;
-layout(set = 1, binding = 1) uniform sampler2D gbuffer_Specular;
-layout(set = 1, binding = 2) uniform sampler2D gbuffer_Normal;
-layout(set = 1, binding = 3) uniform sampler2D gbuffer_WorldPosition;
-layout(set = 1, binding = 4) uniform sampler2D gbuffer_OcclusionRoughnessMetallic;
+layout(set = 1, binding = 0) uniform sampler2D gbufferOccludee_Diffuse;
+layout(set = 1, binding = 1) uniform sampler2D gbufferOccludee_Specular;
+layout(set = 1, binding = 2) uniform sampler2D gbufferOccludee_Normal;
+layout(set = 1, binding = 3) uniform sampler2D gbufferOccludee_WorldPosition;
+layout(set = 1, binding = 4) uniform sampler2D gbufferOccludee_ORM;
 
 layout(rg16_snorm, set = 2, binding = 0) uniform image2D randomNormals;
+
+layout(set = 3, binding = 0) uniform sampler2D gbufferOccluder_Diffuse;
+layout(set = 3, binding = 1) uniform sampler2D gbufferOccluder_Specular;
+layout(set = 3, binding = 2) uniform sampler2D gbufferOccluder_Normal;
+layout(set = 3, binding = 3) uniform sampler2D gbufferOccluder_WorldPosition;
+layout(set = 3, binding = 4) uniform sampler2D gbufferOccluder_ORM;
 
 layout(push_constant) uniform PushConstant
 {
@@ -41,11 +47,11 @@ struct GBufferTexel
 GBufferTexel sampleGBuffer(const vec2 uv)
 {
     GBufferTexel texel;
-    texel.diffuseColor = texture(gbuffer_Diffuse, uv);
-    texel.specularColor = texture(gbuffer_Specular, uv);
-    texel.normal = texture(gbuffer_Normal, uv);
-    texel.position = texture(gbuffer_WorldPosition, uv);
-    texel.occlusionRoughnessMetallic = texture(gbuffer_OcclusionRoughnessMetallic, uv);
+    texel.diffuseColor = texture(gbufferOccludee_Diffuse, uv);
+    texel.specularColor = texture(gbufferOccludee_Specular, uv);
+    texel.normal = texture(gbufferOccludee_Normal, uv);
+    texel.position = texture(gbufferOccludee_WorldPosition, uv);
+    texel.occlusionRoughnessMetallic = texture(gbufferOccludee_ORM, uv);
 
     return texel;
 }
@@ -64,7 +70,7 @@ vec2 sampleRandomNormal(vec2 uv, float scale)
     return sampledNormal;
 }
 
-float sampleOcclusion(const GBufferTexel occludee, sampler2D samplerWorldPos, const vec2 uv)
+float sampleOcclusion(const GBufferTexel occludee, sampler2D samplerOccluderWorldPos, const vec2 uv)
 {
     // Avoid sampling gbuffer out of bounds
     const vec2 uvMin = pc.offset / pc.gBufferCapacity;
@@ -74,7 +80,7 @@ float sampleOcclusion(const GBufferTexel occludee, sampler2D samplerWorldPos, co
         return 0.0;
     }
 
-    const vec4 occluderPosition = texture(samplerWorldPos, uv);
+    const vec4 occluderPosition = texture(samplerOccluderWorldPos, uv);
      
     if(occluderPosition.w < 1.0)
     {
@@ -98,7 +104,7 @@ float sampleOcclusion(const GBufferTexel occludee, sampler2D samplerWorldPos, co
     return clamp(dot(occludee.normal.xyz, normalize(v)) - pc.occluderBias, 0.0, 1.0) * occluderSolidAngle;
 }
 
-float computeAmbientOcclusionTransmittance(GBufferTexel occludee, vec2 gbufferUV, vec3 cameraPosition)
+float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, vec3 cameraPosition)
 {
     float accumulatedOcclusion = 0;
 
@@ -134,14 +140,14 @@ float computeAmbientOcclusionTransmittance(GBufferTexel occludee, vec2 gbufferUV
         const vec2 offset2 = uvSampleRadius * sampleRotate * offset1;
         offset1 = uvSampleRadius * offset1;
 
-        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.25 * offset1);
-        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.75 * offset1);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.25 * offset1);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.75 * offset1);
 
-        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 0.5 * offset2);
-        accumulatedOcclusion += sampleOcclusion(occludee, gbuffer_WorldPosition, gbufferUV + 1.0 * offset2);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.5 * offset2);
+        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 1.0 * offset2);
     }
 
-    return clamp(1.0 - accumulatedOcclusion / (4.0 * 4.0 * 6.28318530718), 0.0, 1.0);
+    return clamp(accumulatedOcclusion / (4.0 * 4.0 * 6.28318530718), 0.0, 1.0);
 }
 
 void main()
@@ -165,7 +171,11 @@ void main()
         return;
     }
 
-    const float aoTransmittance = computeAmbientOcclusionTransmittance(gbufferTexel, gbufferUV, pc.cameraPosition.xyz);
+    const float currentAOAttenuation = computeAmbientOcclusionAttenuation(gbufferTexel, gbufferUV, pc.cameraPosition.xyz);
+    const float previousAOAttenuation = 1.0 - imageLoad(outputAO, texelCoord).r;
+    const float totalAOAttenuation = currentAOAttenuation + previousAOAttenuation;
+
+    const float aoTransmittance = clamp(1.0 - totalAOAttenuation, 0.0, 1.0);
 
     imageStore(outputAO, texelCoord, vec4(aoTransmittance, 0.0, 0.0, 0.0));
 }

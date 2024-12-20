@@ -21,7 +21,8 @@ namespace vkt
 {
 struct LightingPassParameters
 {
-    bool enableAO;
+    bool enableAOFromFrontFace;
+    bool enableAOFromBackFace;
     bool enableRandomNormalSampling;
 
     // When sampling a random normal to then reflect our AO samples, we sample
@@ -69,19 +70,26 @@ struct SSAOPassResources
 {
     // layout(r16, set = 0, binding = 0) uniform image2D outputAO;
     //
-    // layout(set = 1, binding = 0) uniform sampler2D gbuffer_Diffuse;
-    // layout(set = 1, binding = 1) uniform sampler2D gbuffer_Specular;
-    // layout(set = 1, binding = 2) uniform sampler2D gbuffer_Normal;
-    // layout(set = 1, binding = 3) uniform sampler2D gbuffer_WorldPosition;
-    // layout(set = 1, binding = 4) uniform sampler2D
-    // gbuffer_OcclusionRoughnessMetallic;
+    // layout(set = 1, binding = 0) uniform sampler2D gbufferOccludee_Diffuse;
+    // layout(set = 1, binding = 1) uniform sampler2D gbufferOccludee_Specular;
+    // layout(set = 1, binding = 2) uniform sampler2D gbufferOccludee_Normal;
+    // layout(set = 1, binding = 3) uniform sampler2D
+    //     gbufferOccludee_WorldPosition;
+    // layout(set = 1, binding = 4) uniform sampler2D gbufferOccludee_ORM;
     //
-    // layout(rg16_snorm, set = 2, binding = 0) uniform image2D
-    // randomNormals;
+    // layout(rg16_snorm, set = 2, binding = 0) uniform image2D randomNormals;
+    //
+    // layout(set = 3, binding = 0) uniform sampler2D gbufferOccluder_Diffuse;
+    // layout(set = 3, binding = 1) uniform sampler2D gbufferOccluder_Specular;
+    // layout(set = 3, binding = 2) uniform sampler2D gbufferOccluder_Normal;
+    // layout(set = 3, binding = 3) uniform sampler2D
+    //     gbufferOccluder_WorldPosition;
+    // layout(set = 3, binding = 4) uniform sampler2D gbufferOccluder_ORM;
 
     VkDescriptorSetLayout outputAOLayout{VK_NULL_HANDLE};
-    VkDescriptorSetLayout gbufferLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout gbufferOccludeeLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout randomNormalsLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout gbufferOccluderLayout{VK_NULL_HANDLE};
 
     VkDescriptorSet ambientOcclusionSet{VK_NULL_HANDLE};
     std::unique_ptr<ImageView> ambientOcclusion{};
@@ -107,7 +115,7 @@ struct LightingPass
         -> std::optional<LightingPass>;
 
     void
-    recordDraw(VkCommandBuffer, RenderTarget&, GBuffer const&, Scene const&);
+    recordDraw(VkCommandBuffer, RenderTarget&, GBuffer const& frontFace, GBuffer const& backFace, Scene const&);
 
     void controlsWindow(std::optional<ImGuiID> dockNode);
 

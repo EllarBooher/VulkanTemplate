@@ -409,7 +409,8 @@ void setRasterizationState(
     VkCommandBuffer const cmd,
     bool const reverseZ,
     VkRect2D const drawRect,
-    size_t const colorAttachmentCount
+    size_t const colorAttachmentCount,
+    bool const backface
 )
 {
     VkViewport const viewport{
@@ -434,7 +435,9 @@ void setRasterizationState(
 
     // No vertex input state since we use buffer addresses
 
-    vkCmdSetCullModeEXT(cmd, VK_CULL_MODE_BACK_BIT);
+    vkCmdSetCullModeEXT(
+        cmd, backface ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT
+    );
 
     vkCmdSetPrimitiveTopology(cmd, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     vkCmdSetPrimitiveRestartEnable(cmd, VK_FALSE);
@@ -600,7 +603,8 @@ void GBufferPipeline::recordDraw(
     VkCommandBuffer const cmd,
     RenderTarget& renderTarget,
     GBuffer& gbuffer,
-    Scene& scene
+    Scene& scene,
+    bool const backface
 )
 {
     gbuffer.setSize(renderTarget.size());
@@ -613,7 +617,8 @@ void GBufferPipeline::recordDraw(
         cmd,
         m_creationArguments.reverseZ,
         gbuffer.size(),
-        static_cast<size_t>(GBufferTextureIndices::COUNT)
+        static_cast<size_t>(GBufferTextureIndices::COUNT),
+        backface
     );
     auto const gbufferAttachments{
         gbuffer.attachmentInfo(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)

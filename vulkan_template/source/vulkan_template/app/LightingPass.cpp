@@ -373,15 +373,25 @@ auto createSSAOPassResources(
     }
     resources.outputAOLayout = outputAOLayoutResult.value();
 
-    auto const gbufferLayoutResult{
+    auto const gbufferOccludeeLayoutResult{
         vkt::GBuffer::allocateDescriptorSetLayout(device)
     };
-    if (!gbufferLayoutResult.has_value())
+    if (!gbufferOccludeeLayoutResult.has_value())
     {
         VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
         return std::nullopt;
     }
-    resources.gbufferLayout = gbufferLayoutResult.value();
+    resources.gbufferOccludeeLayout = gbufferOccludeeLayoutResult.value();
+
+    auto const gbufferOccluderLayoutResult{
+        vkt::GBuffer::allocateDescriptorSetLayout(device)
+    };
+    if (!gbufferOccluderLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate GBuffer descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.gbufferOccluderLayout = gbufferOccluderLayoutResult.value();
 
     auto const randomNormalsLayoutResult{::allocateRandomNormalsLayout(device)};
     if (!randomNormalsLayoutResult.has_value())
@@ -393,8 +403,9 @@ auto createSSAOPassResources(
 
     std::vector<VkDescriptorSetLayout> const layouts{
         resources.outputAOLayout,
-        resources.gbufferLayout,
-        resources.randomNormalsLayout
+        resources.gbufferOccludeeLayout,
+        resources.randomNormalsLayout,
+        resources.gbufferOccluderLayout,
     };
     std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -565,7 +576,14 @@ void cleanResources(
 void cleanResources(VkDevice const device, vkt::SSAOPassResources& resources)
 {
     vkDestroyDescriptorSetLayout(device, resources.outputAOLayout, nullptr);
-    vkDestroyDescriptorSetLayout(device, resources.gbufferLayout, nullptr);
+
+    vkDestroyDescriptorSetLayout(
+        device, resources.gbufferOccludeeLayout, nullptr
+    );
+    vkDestroyDescriptorSetLayout(
+        device, resources.gbufferOccluderLayout, nullptr
+    );
+
     vkDestroyDescriptorSetLayout(
         device, resources.randomNormalsLayout, nullptr
     );
@@ -584,7 +602,8 @@ namespace vkt
 {
 // NOLINTBEGIN(readability-magic-numbers)
 LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
-    .enableAO = true,
+    .enableAOFromFrontFace = true,
+    .enableAOFromBackFace = true,
     .enableRandomNormalSampling = true,
     .normalizeRandomNormals = true,
 
@@ -687,32 +706,36 @@ namespace
 {
 void recordDrawSSAO(
     VkCommandBuffer const cmd,
-    vkt::GBuffer const& gbuffer,
+    vkt::GBuffer const& occludee,
+    vkt::GBuffer const& occluder,
     vkt::SSAOPassResources& resources,
     vkt::LightingPassParameters const& parameters,
     vkt::Scene const& scene
 )
 {
+    // GBuffers must be same size since shader uses the same UV between them
+    assert(occludee.capacity() == occluder.capacity());
+    assert(occludee.size() == occluder.size());
+
     uint32_t constexpr WORKGROUP_SIZE{16};
-    VkExtent2D const gBufferCapacity{gbuffer.capacity().value()};
+    VkExtent2D const gBufferCapacity{occludee.capacity().value()};
 
     VkShaderStageFlagBits const stage{VK_SHADER_STAGE_COMPUTE_BIT};
     std::vector<VkDescriptorSet> descriptors{
         resources.ambientOcclusionSet,
-        gbuffer.descriptor(),
-        resources.randomNormalsSet
+        occludee.descriptor(),
+        resources.randomNormalsSet,
+        occluder.descriptor()
     };
 
     resources.ambientOcclusion->recordTransitionBarriered(
         cmd, VK_IMAGE_LAYOUT_GENERAL
     );
-    // Clear as black so geometry shows up as white with AO as grey/black
-    VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
-    resources.ambientOcclusion->image().recordClearEntireColor(
-        cmd, &clearColor
-    );
 
-    gbuffer.recordTransitionImages(
+    occludee.recordTransitionImages(
+        cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+    occluder.recordTransitionImages(
         cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
 
@@ -737,7 +760,7 @@ void recordDrawSSAO(
         VKR_ARRAY_NONE
     );
 
-    VkRect2D const drawRect{gbuffer.size()};
+    VkRect2D const drawRect{occludee.size()};
     auto const aspectRatio{
         static_cast<float>(vkt::aspectRatio(drawRect.extent).value())
     };
@@ -814,8 +837,11 @@ void recordDrawLighting(
         cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
 
+    bool const enableAO{
+        parameters.enableAOFromFrontFace || parameters.enableAOFromBackFace
+    };
     LightingPassSpecializationConstant const specializationConstant{
-        .enableAO = parameters.enableAO ? VK_TRUE : VK_FALSE,
+        .enableAO = enableAO ? VK_TRUE : VK_FALSE,
     };
     VkShaderEXT const shader{resources.shaderBySpecializationHash.at(
         std::hash<LightingPassSpecializationConstant>{}(specializationConstant)
@@ -891,28 +917,35 @@ namespace vkt
 void LightingPass::recordDraw(
     VkCommandBuffer const cmd,
     RenderTarget& texture,
-    GBuffer const& gbuffer,
+    GBuffer const& frontFace,
+    GBuffer const& backFace,
     Scene const& scene
 )
 {
     assert(
-        texture.size() == gbuffer.size()
+        texture.size() == frontFace.size() && texture.size() == backFace.size()
         && "GBuffer and render target must be same size."
     );
 
-    if (m_parameters.enableAO)
+    m_ssaoPassResources.ambientOcclusion->recordTransitionBarriered(
+        cmd, VK_IMAGE_LAYOUT_GENERAL
+    );
+    // Start with no attenuation due to AO
+    VkClearColorValue const clearColor{.float32 = {1.0F, 1.0F, 1.0F, 1.0F}};
+    m_ssaoPassResources.ambientOcclusion->image().recordClearEntireColor(
+        cmd, &clearColor
+    );
+
+    if (m_parameters.enableAOFromFrontFace)
     {
-        recordDrawSSAO(cmd, gbuffer, m_ssaoPassResources, m_parameters, scene);
-    }
-    else
-    {
-        m_ssaoPassResources.ambientOcclusion->recordTransitionBarriered(
-            cmd, VK_IMAGE_LAYOUT_GENERAL
+        recordDrawSSAO(
+            cmd, frontFace, frontFace, m_ssaoPassResources, m_parameters, scene
         );
-        // Clear as black so geometry shows up as white with AO as grey/black
-        VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
-        m_ssaoPassResources.ambientOcclusion->image().recordClearEntireColor(
-            cmd, &clearColor
+    }
+    if (m_parameters.enableAOFromBackFace)
+    {
+        recordDrawSSAO(
+            cmd, frontFace, backFace, m_ssaoPassResources, m_parameters, scene
         );
     }
 
@@ -939,7 +972,7 @@ void LightingPass::recordDraw(
         recordDrawLighting(
             cmd,
             texture,
-            gbuffer,
+            frontFace,
             m_ssaoPassResources.ambientOcclusionSet,
             m_lightingPassResources,
             m_parameters,
@@ -966,7 +999,14 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
         ImGui::SeparatorText("Ambient Occlusion");
         PropertyTable table{PropertyTable::begin()};
         table.rowBoolean(
-            "Enable AO", m_parameters.enableAO, DEFAULT_PARAMETERS.enableAO
+            "Enable AO from Front Face",
+            m_parameters.enableAOFromFrontFace,
+            DEFAULT_PARAMETERS.enableAOFromFrontFace
+        );
+        table.rowBoolean(
+            "Enable AO from Back Face",
+            m_parameters.enableAOFromBackFace,
+            DEFAULT_PARAMETERS.enableAOFromBackFace
         );
         table.rowBoolean(
             "Reflect SSAO samples randomly",

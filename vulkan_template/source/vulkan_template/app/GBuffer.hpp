@@ -119,8 +119,15 @@ public:
         -> std::optional<GBufferPipeline>;
 
     // Render target is needed for depth and to determine the viewport
-    void
-    recordDraw(VkCommandBuffer, RenderTarget& renderTarget, GBuffer&, Scene&);
+    // Backface option reverses depth testing, and draws the backfaces of
+    // geometry.
+    void recordDraw(
+        VkCommandBuffer,
+        RenderTarget& renderTarget,
+        GBuffer&,
+        Scene&,
+        bool backface
+    );
 
 private:
     VkDevice m_device;
