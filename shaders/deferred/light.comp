@@ -113,8 +113,8 @@ layout(push_constant) uniform PushConstant
     float lightStrength;
     float ambientStrength;
 
-    bool gbufferWhiteOverride;
     vec3 padding0;
+    bool gbufferWhiteOverride;
 } pc;
 
 layout(constant_id = 0) const bool enableAO = false;

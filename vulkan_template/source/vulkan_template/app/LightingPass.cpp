@@ -44,8 +44,8 @@ struct LightingPassPushConstant
     float lightStrength;
     float ambientStrength;
 
-    bool gbufferWhiteOverride;
     glm::vec3 padding0;
+    uint32_t gbufferWhiteOverride;
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
 static_assert(sizeof(LightingPassPushConstant) == 144ULL);
