@@ -9,10 +9,15 @@
 
 namespace vkt
 {
-ImageView::ImageView(ImageView&& other) noexcept
+ImageView::ImageView(ImageView&& other) noexcept { *this = std::move(other); }
+
+auto ImageView::operator=(ImageView&& other) noexcept -> ImageView&
 {
     m_image = std::move(other.m_image);
     m_memory = std::exchange(other.m_memory, ImageViewMemory{});
+    m_allocationParameters = std::exchange(other.m_allocationParameters, {});
+
+    return *this;
 }
 
 ImageView::~ImageView() { destroy(); }
@@ -62,6 +67,7 @@ auto ImageView::allocate(
 
     ImageView finalView{};
     finalView.m_image = std::make_unique<Image>(std::move(preallocatedImage));
+    finalView.m_allocationParameters = viewParameters;
 
     Image& image{*finalView.m_image};
 
@@ -129,6 +135,12 @@ auto ImageView::uploadToDevice(
         std::move(uploadResult).value(),
         vkt::ImageViewAllocationParameters{}
     );
+}
+
+auto ImageView::allocationParameters() const
+    -> ImageViewAllocationParameters const&
+{
+    return m_allocationParameters;
 }
 
 // NOLINTNEXTLINE(readability-make-member-function-const)

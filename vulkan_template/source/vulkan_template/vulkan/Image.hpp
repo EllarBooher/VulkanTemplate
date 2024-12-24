@@ -69,12 +69,12 @@ struct ImageRG16_SNORM
 struct Image
 {
 public:
-    auto operator=(Image&&) -> Image& = delete;
-
-    Image(Image const&) = delete;
     auto operator=(Image const&) -> Image& = delete;
+    Image(Image const&) = delete;
 
+    auto operator=(Image&&) -> Image&;
     Image(Image&&) noexcept;
+
     ~Image();
 
 private:
@@ -119,6 +119,11 @@ public:
     [[nodiscard]] auto aspectRatio() const -> std::optional<double>;
     [[nodiscard]] auto format() const -> VkFormat;
 
+    // Returns the parameters used to create this image, useful for creating an
+    // exact copy.
+    [[nodiscard]] auto allocationParameters() const
+        -> ImageAllocationParameters const&;
+
     // WARNING: Do not destroy this image. Be careful of implicit layout
     // transitions, which may break the guarantee of Image::expectedLayout.
     auto image() -> VkImage;
@@ -141,12 +146,13 @@ public:
         Image& src,
         Image& dst,
         VkImageAspectFlags,
-        VkRect2D const srcRect,
-        VkRect2D const dstRect
+        VkRect2D srcRect,
+        VkRect2D dstRect
     );
 
 private:
     ImageMemory m_memory{};
     VkImageLayout m_recordedLayout{};
+    ImageAllocationParameters m_allocationParameters{};
 };
 } // namespace vkt

@@ -16,6 +16,8 @@
 #include "vulkan_template/vulkan/VulkanOverloads.hpp"
 #include <cassert>
 #include <filesystem>
+#include <glm/common.hpp>
+#include <glm/geometric.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/random.hpp>
@@ -24,6 +26,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -245,6 +248,56 @@ auto fillSingleComputeImageDescriptor(
 
     return setResult;
 }
+
+auto fillInputOutputComputeDescriptor(
+    VkDevice const device,
+    vkt::ImageView& inputImage,
+    vkt::ImageView& outputImage,
+    vkt::DescriptorAllocator& descriptorAllocator,
+    VkDescriptorSetLayout const layout
+) -> std::optional<VkDescriptorSet>
+{
+    std::optional<VkDescriptorSet> setResult{VK_NULL_HANDLE};
+    VkDescriptorSet& set{setResult.value()};
+    VkDescriptorType constexpr DESCRIPTOR_TYPE{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+    };
+
+    set = descriptorAllocator.allocate(device, layout);
+
+    std::vector<VkDescriptorImageInfo> bindings{
+        {
+            .sampler = VK_NULL_HANDLE,
+            .imageView = inputImage.view(),
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+        },
+        {
+            .sampler = VK_NULL_HANDLE,
+            .imageView = outputImage.view(),
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+        }
+    };
+    VkWriteDescriptorSet const write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
+
+        .dstSet = set,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = static_cast<uint32_t>(bindings.size()),
+        .descriptorType = DESCRIPTOR_TYPE,
+
+        .pImageInfo = bindings.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+
+    std::vector<VkWriteDescriptorSet> writes{write};
+
+    vkUpdateDescriptorSets(device, VKR_ARRAY(writes), VKR_ARRAY_NONE);
+
+    return setResult;
+}
+
 auto createLightingPassResources(VkDevice const device)
     -> std::optional<vkt::LightingPassResources>
 {
@@ -557,6 +610,145 @@ auto createSSAOPassResources(
     return resourcesResult;
 }
 
+// InputImage is needed to write it into the input/output descriptor set
+auto createGaussianBlurPassResources(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::DescriptorAllocator& descriptorAllocator,
+    vkt::ImageView& inputImage
+) -> std::optional<vkt::GaussianBlurPassResources>
+{
+    std::optional<vkt::GaussianBlurPassResources> resourcesResult{
+        std::in_place, vkt::GaussianBlurPassResources{}
+    };
+    vkt::GaussianBlurPassResources& resources{resourcesResult.value()};
+
+    auto const inputOutputLayoutResult{
+        vkt::DescriptorLayoutBuilder{}
+            .pushBinding(vkt::DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+                .bindingFlags = 0,
+            })
+            .pushBinding(vkt::DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+                .bindingFlags = 0,
+            })
+            .build(device, (VkDescriptorSetLayoutCreateFlags)0)
+    };
+    if (!inputOutputLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate Input/Output image set layout.");
+        return std::nullopt;
+    }
+    resources.inputOutputLayout = inputOutputLayoutResult.value();
+
+    std::vector<VkDescriptorSetLayout> const layouts{resources.inputOutputLayout
+    };
+    std::vector<VkPushConstantRange> const ranges{};
+
+    char const* SHADER_PATH{"shaders/gaussian_blur/gaussian_blur_vert.comp.spv"
+    };
+    auto const shaderResult = vkt::loadShaderObject(
+        device,
+        SHADER_PATH,
+        VK_SHADER_STAGE_COMPUTE_BIT,
+        (VkFlags)0,
+        layouts,
+        ranges,
+        VkSpecializationInfo{}
+    );
+    if (!shaderResult.has_value())
+    {
+        VKT_ERROR("Failed to compile shader.");
+        return std::nullopt;
+    }
+    resources.verticalBlurShader = shaderResult.value();
+
+    VkPipelineLayoutCreateInfo const layoutCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+
+        .flags = 0,
+
+        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+        .pSetLayouts = layouts.data(),
+
+        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+        .pPushConstantRanges = ranges.data(),
+    };
+
+    if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
+            device, &layoutCreateInfo, nullptr, &resources.verticalBlurLayout
+        )};
+        pipelineLayoutResult != VK_SUCCESS)
+    {
+        VKT_LOG_VK(pipelineLayoutResult, "Failed to create pipeline layout.");
+        return std::nullopt;
+    }
+
+    auto outputImageResult{vkt::ImageView::allocate(
+        device,
+        allocator,
+        inputImage.image().allocationParameters(),
+        inputImage.allocationParameters()
+    )};
+    if (!outputImageResult.has_value())
+    {
+        VKT_ERROR("Failed to create gaussian blur output image.");
+        return std::nullopt;
+    }
+    resources.outputImage =
+        std::make_unique<vkt::ImageView>(std::move(outputImageResult).value());
+
+    auto inputOutputSetResult{::fillInputOutputComputeDescriptor(
+        device,
+        inputImage,
+        *resources.outputImage,
+        descriptorAllocator,
+        resources.inputOutputLayout
+    )};
+    if (!inputOutputSetResult.has_value())
+    {
+        VKT_ERROR("Failed to fill input output image set for gaussian blur.");
+        return std::nullopt;
+    }
+    resources.inputOutputImageSet = inputOutputSetResult.value();
+
+    // Create a descriptor layout/set for binding this output image alone to a
+    // compute shader
+    auto const outputImageLayoutResult{
+        vkt::DescriptorLayoutBuilder{}
+            .pushBinding(vkt::DescriptorLayoutBuilder::BindingParams{
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+                .bindingFlags = 0,
+            })
+            .build(device, (VkDescriptorSetLayoutCreateFlags)0)
+    };
+    if (!outputImageLayoutResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate render target descriptor set layout.");
+        return std::nullopt;
+    }
+    resources.outputImageLayout = outputImageLayoutResult.value();
+
+    auto outputSetResult{::fillSingleComputeImageDescriptor(
+        device,
+        *resources.outputImage,
+        descriptorAllocator,
+        resources.outputImageLayout
+    )};
+    if (!outputSetResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate output image set.");
+    }
+    resources.outputImageSet = outputSetResult.value();
+
+    return resourcesResult;
+}
+
 void cleanResources(
     VkDevice const device, vkt::LightingPassResources& resources
 )
@@ -596,6 +788,18 @@ void cleanResources(VkDevice const device, vkt::SSAOPassResources& resources)
     vkDestroyPipelineLayout(device, resources.shaderLayout, nullptr);
 }
 
+void cleanResources(
+    VkDevice const device, vkt::GaussianBlurPassResources& resources
+)
+{
+    vkDestroyDescriptorSetLayout(device, resources.inputOutputLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, resources.outputImageLayout, nullptr);
+
+    vkDestroyShaderEXT(device, resources.verticalBlurShader, nullptr);
+
+    vkDestroyPipelineLayout(device, resources.verticalBlurLayout, nullptr);
+}
+
 } // namespace
 
 namespace vkt
@@ -615,6 +819,8 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .occluderBias = 0.15F,
     .aoScale = 0.02F,
     .gbufferWhiteOverride = true,
+
+    .blurAOTexture = true,
 };
 // NOLINTEND(readability-magic-numbers)
 
@@ -625,6 +831,8 @@ auto LightingPass::operator=(LightingPass&& other) -> LightingPass&
 
     m_lightingPassResources = std::exchange(other.m_lightingPassResources, {});
     m_ssaoPassResources = std::exchange(other.m_ssaoPassResources, {});
+    m_gaussianBlurPassResources =
+        std::exchange(other.m_gaussianBlurPassResources, {});
 
     return *this;
 }
@@ -641,6 +849,7 @@ LightingPass::~LightingPass()
 
     ::cleanResources(m_device, m_lightingPassResources);
     ::cleanResources(m_device, m_ssaoPassResources);
+    ::cleanResources(m_device, m_gaussianBlurPassResources);
 }
 auto LightingPass::create(
     VkDevice const device,
@@ -692,11 +901,24 @@ auto LightingPass::create(
     )};
     if (!ssaoPassResourcesResult.has_value())
     {
-        VKT_ERROR("Failed to create lighting pass resources.");
+        VKT_ERROR("Failed to create ssao pass resources.");
         return std::nullopt;
     }
     lightingPass.m_ssaoPassResources =
         std::move(ssaoPassResourcesResult).value();
+
+    auto gaussianBlurPassResourcesResult{::createGaussianBlurPassResources(
+        lightingPass.m_device,
+        allocator,
+        *lightingPass.m_descriptorAllocator,
+        *lightingPass.m_ssaoPassResources.ambientOcclusion
+    )};
+    if (!gaussianBlurPassResourcesResult.has_value())
+    {
+        VKT_ERROR("Failed to create gaussian blur pass resources.");
+    }
+    lightingPass.m_gaussianBlurPassResources =
+        std::move(gaussianBlurPassResourcesResult).value();
 
     return lightingPassResult;
 }
@@ -761,9 +983,7 @@ void recordDrawSSAO(
     );
 
     VkRect2D const drawRect{occludee.size()};
-    auto const aspectRatio{
-        static_cast<float>(vkt::aspectRatio(drawRect.extent).value())
-    };
+
     SSAOPassPushConstant const pc{
         .offset =
             glm::vec2{
@@ -802,6 +1022,47 @@ void recordDrawSSAO(
             .width = WORKGROUP_SIZE, .height = WORKGROUP_SIZE, .depth = 1
         }
     );
+}
+
+void recordBlurAO(
+    VkCommandBuffer const cmd,
+    vkt::ImageView& inputImage,
+    vkt::GaussianBlurPassResources& resources
+)
+{
+    inputImage.recordTransitionBarriered(cmd, VK_IMAGE_LAYOUT_GENERAL);
+    resources.outputImage->recordTransitionBarriered(
+        cmd, VK_IMAGE_LAYOUT_GENERAL
+    );
+
+    VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
+    resources.outputImage->image().recordClearEntireColor(cmd, &clearColor);
+
+    uint32_t constexpr WORKGROUP_WIDTH{32};
+
+    VkShaderStageFlagBits const stage{VK_SHADER_STAGE_COMPUTE_BIT};
+    std::vector<VkDescriptorSet> descriptors{resources.inputOutputImageSet};
+    vkCmdBindDescriptorSets(
+        cmd,
+        VK_PIPELINE_BIND_POINT_COMPUTE,
+        resources.verticalBlurLayout,
+        0,
+        VKR_ARRAY(descriptors),
+        VKR_ARRAY_NONE
+    );
+
+    VkShaderEXT const shader{resources.verticalBlurShader};
+
+    vkCmdBindShadersEXT(cmd, 1, &stage, &shader);
+
+    VkExtent3D const invocations{
+        .width = inputImage.image().extent3D().width, .height = 1, .depth = 1
+    };
+    VkExtent3D constexpr VERTICAL_LOCAL_SIZE{
+        .width = 32, .height = 1, .depth = 1
+    };
+
+    vkt::computeDispatch(cmd, invocations, VERTICAL_LOCAL_SIZE);
 }
 
 void recordDrawLighting(
@@ -893,7 +1154,8 @@ void recordDrawLighting(
             },
         .lightStrength = parameters.lightStrength,
         .ambientStrength = parameters.ambientStrength,
-        .gbufferWhiteOverride = parameters.gbufferWhiteOverride
+        .gbufferWhiteOverride =
+            parameters.gbufferWhiteOverride ? VK_TRUE : VK_FALSE
     };
 
     vkCmdPushConstants(
@@ -953,6 +1215,20 @@ void LightingPass::recordDraw(
         );
     }
 
+    if (m_parameters.blurAOTexture)
+    {
+        recordBlurAO(
+            cmd,
+            *m_ssaoPassResources.ambientOcclusion,
+            m_gaussianBlurPassResources
+        );
+    }
+
+    VkDescriptorSet const AOSet{
+        m_parameters.blurAOTexture ? m_gaussianBlurPassResources.outputImageSet
+                                   : m_ssaoPassResources.ambientOcclusionSet
+    };
+
     if (m_parameters.copyAOToOutputTexture)
     {
         texture.color().recordTransitionBarriered(
@@ -977,7 +1253,7 @@ void LightingPass::recordDraw(
             cmd,
             texture,
             frontFace,
-            m_ssaoPassResources.ambientOcclusionSet,
+            AOSet,
             m_lightingPassResources,
             m_parameters,
             scene
@@ -1061,6 +1337,11 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             "Copy AO to Output Texture",
             m_parameters.copyAOToOutputTexture,
             DEFAULT_PARAMETERS.copyAOToOutputTexture
+        );
+        table.rowBoolean(
+            "Apply Gaussian Blur to AO",
+            m_parameters.blurAOTexture,
+            DEFAULT_PARAMETERS.blurAOTexture
         );
 
         table.end();

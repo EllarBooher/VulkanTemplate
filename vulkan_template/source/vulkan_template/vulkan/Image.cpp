@@ -14,10 +14,16 @@
 
 namespace vkt
 {
-Image::Image(Image&& other) noexcept
+auto Image::operator=(Image&& other) -> Image&
 {
-    m_memory = std::exchange(other.m_memory, ImageMemory{});
+    m_memory = std::exchange(other.m_memory, {});
+    m_recordedLayout =
+        std::exchange(other.m_recordedLayout, VK_IMAGE_LAYOUT_UNDEFINED);
+    m_allocationParameters = std::exchange(other.m_allocationParameters, {});
+
+    return *this;
 }
+Image::Image(Image&& other) noexcept { *this = std::move(other); }
 
 Image::~Image() { destroy(); }
 
@@ -110,6 +116,7 @@ auto Image::allocate(
 
     std::optional<Image> imageResult{std::in_place, Image{}};
     Image& image{imageResult.value()};
+    image.m_allocationParameters = parameters;
 
     VkImage imageHandle;
     VmaAllocation allocation;
@@ -278,6 +285,11 @@ auto Image::aspectRatio() const -> std::optional<double>
 auto Image::format() const -> VkFormat
 {
     return m_memory.imageCreateInfo.format;
+}
+
+auto Image::allocationParameters() const -> ImageAllocationParameters const&
+{
+    return m_allocationParameters;
 }
 
 // NOLINTNEXTLINE(readability-make-member-function-const)

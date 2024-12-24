@@ -43,8 +43,12 @@ struct LightingPassParameters
 
     // When sampling gbuffer for albedo/specular, read as pure white vec4(1.0)
     bool gbufferWhiteOverride;
+
+    // Enables blurring the AO texture before using it for lighting
+    bool blurAOTexture;
 };
 
+// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
 struct LightingPassResources
 {
     // layout(rgba16, set = 0, binding = 0) uniform image2D image;
@@ -66,6 +70,7 @@ struct LightingPassResources
     VkPipelineLayout shaderLayout{VK_NULL_HANDLE};
 };
 
+// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
 struct SSAOPassResources
 {
     // layout(r16, set = 0, binding = 0) uniform image2D outputAO;
@@ -101,6 +106,31 @@ struct SSAOPassResources
     VkPipelineLayout shaderLayout{VK_NULL_HANDLE};
 };
 
+struct GaussianBlurPassResources
+{
+    // This blur is intended to be used on the AO image, to smooth the noise
+
+    // layout(r16, set = 0, binding = 0) uniform readonly image2d imageInput;
+    // layout(r16, set = 0, binding = 1) uniform writeonly image2d imageOut;
+
+    VkDescriptorSetLayout inputOutputLayout{VK_NULL_HANDLE};
+
+    VkDescriptorSet inputOutputImageSet{VK_NULL_HANDLE};
+
+    // TODO: figure out a better spot to hold these resources. Perhaps a array
+    // in the out LightingPass object, where they can be created beforehand then
+    // passed to be written into the inputOutputImageSet. This single image
+    // layout is duplicated in a lot of places.
+
+    // layout(r16, set = 0, binding = 0) uniform image2D;
+    VkDescriptorSetLayout outputImageLayout{VK_NULL_HANDLE};
+    VkDescriptorSet outputImageSet{VK_NULL_HANDLE};
+    std::unique_ptr<ImageView> outputImage{VK_NULL_HANDLE};
+
+    VkShaderEXT verticalBlurShader{VK_NULL_HANDLE};
+    VkPipelineLayout verticalBlurLayout{VK_NULL_HANDLE};
+};
+
 struct LightingPass
 {
     auto operator=(LightingPass&&) -> LightingPass&;
@@ -130,5 +160,6 @@ private:
 
     LightingPassResources m_lightingPassResources{};
     SSAOPassResources m_ssaoPassResources{};
+    GaussianBlurPassResources m_gaussianBlurPassResources{};
 };
 } // namespace vkt

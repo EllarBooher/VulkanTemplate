@@ -48,12 +48,12 @@ struct ImageViewMemory
 struct ImageView
 {
 public:
-    auto operator=(ImageView&&) -> ImageView& = delete;
-
     ImageView(ImageView const&) = delete;
     auto operator=(ImageView const&) -> ImageView& = delete;
 
     ImageView(ImageView&&) noexcept;
+    auto operator=(ImageView&&) noexcept -> ImageView&;
+
     ~ImageView();
 
 private:
@@ -85,6 +85,11 @@ public:
         ImageRGBA const& image
     ) -> std::optional<vkt::ImageView>;
 
+    // Returns the parameters used to create this image, useful for creating an
+    // exact copy.
+    [[nodiscard]] auto allocationParameters() const
+        -> ImageViewAllocationParameters const&;
+
     // WARNING: Do not destroy this image view.
     auto view() -> VkImageView;
 
@@ -101,5 +106,6 @@ private:
     // shared_ptr, or we make a new image view class.
     std::unique_ptr<Image> m_image{};
     ImageViewMemory m_memory{};
+    ImageViewAllocationParameters m_allocationParameters{};
 };
 } // namespace vkt

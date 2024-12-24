@@ -1,0 +1,111 @@
+#version 460
+
+// Gaussian blur vertical pass
+// Each invocation processes a single column of the image
+// To perform a full gaussian blur, apply a horizontal blur alongside this
+
+layout(local_size_x = 32, local_size_y = 1) in;
+
+layout(r16, set = 0, binding = 0) uniform readonly image2D imageInput;
+layout(r16, set = 0, binding = 1) uniform writeonly image2D imageOutput;
+
+// Sampled continuous normal distribution
+// mean := 0
+// standard deviation := 1
+// Truncated to a 9x9 kernel before separation
+// Not normalized since error is minimal
+const uint gKernelWidth = 9;
+const uint gKernelRadius = 4;
+
+// Doubled so we do not need to bounds check when sampling weights
+// Notice that any given gKernelWidth elements of this array represent the kernel in two disjoint segments, 
+// which will align with how we store the samples of the input image.
+const float gWeights[2 * gKernelWidth] = {
+	0.0001338302,
+	0.0044318484,
+	0.0539909665,
+	0.2419707245,
+	0.3989422804,
+	0.2419707245,
+	0.0539909665,
+	0.0044318484,
+	0.0001338302,
+	0.0001338302,
+	0.0044318484,
+	0.0539909665,
+	0.2419707245,
+	0.3989422804,
+	0.2419707245,
+	0.0539909665,
+	0.0044318484,
+	0.0001338302
+};
+
+void main()
+{
+	// Assume imageInput and imageOut are the same size
+	const vec2 size = imageSize(imageInput);
+	const uint column = gl_GlobalInvocationID.x;
+
+	if(column > size.x)
+	{
+		return;
+	}
+
+	// Sliding window of the neighborhood of texel values used for convolution
+	vec4 neighborhood[gKernelWidth];
+	// The index of the window to overwrite.
+	// This is the oldest value (in this case, the texel with the lowest y coord)
+	// This index equivalently represents where the upper/left edge of the convolution kernel is
+	uint oldestNeighborIndex = 0;
+
+	// Populate initial values
+	const vec4 edge = imageLoad(imageInput, ivec2(column, 0));
+
+	for(uint i = 0; i <= gKernelRadius; i++)
+	{
+		// Read edge values like a sampler with clamping
+		neighborhood[i] = edge;
+	}
+	for(uint i = gKernelRadius + 1; i < gKernelWidth; i++)
+	{
+		neighborhood[i] = imageLoad(imageInput, ivec2(column, i));
+	}
+
+	// Perform the convolution
+	for(uint row = 0; row < size.y; row++)
+	{
+		// Example diagram how the weights are read:
+		// Values are distance from the center of a kernel of radius 3
+		//
+		//                                   oldestNeighborIndex
+		//                                   \/ 
+		// Neighborhood :           [  2  3  -3  -2  -1  0  1 ]
+		// Weights : [ -3 -2 -1  0  1  2  3  -3  -2  -1  0  1  2  3 ]
+		// 
+		// As we write new values and the -3 in neighborhood slides left in the diagram, the weights interval must slide right to match it. 
+		// This is achieved by decrementing the weightOffset.
+
+		const uint weightOffset = gKernelWidth - oldestNeighborIndex;
+		
+		vec4 blur = vec4(0.0);
+		for(uint i = 0; i < gKernelWidth; i++)
+		{
+			blur += neighborhood[i] * gWeights[i + weightOffset];
+		}
+
+		imageStore(imageOutput, ivec2(column, row), blur);
+
+		// The next sample is at the edge of the neighborhood, 
+		// so one past the kernel
+		neighborhood[oldestNeighborIndex] = 
+			imageLoad(imageInput, ivec2(column, row + gKernelRadius + 1));
+
+		oldestNeighborIndex += 1;
+		
+		if(oldestNeighborIndex >= gKernelWidth)
+		{
+			oldestNeighborIndex = 0;
+		}
+	}
+}
