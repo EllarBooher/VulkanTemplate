@@ -1,6 +1,5 @@
 #pragma once
 
-#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
 #include <filesystem>
 #include <optional>
@@ -22,6 +21,6 @@ auto loadShaderModule(VkDevice, std::filesystem::path const& path)
     -> std::optional<VkShaderModule>;
 
 void computeDispatch(
-    VkCommandBuffer, VkExtent3D invocations, uint32_t workgroupSize
+    VkCommandBuffer, VkExtent3D invocations, VkExtent3D workgroupSize
 );
 } // namespace vkt

@@ -170,7 +170,9 @@ void vkt::PostProcess::recordLinearToSRGB(
     vkt::computeDispatch(
         cmd,
         VkExtent3D{drawRect.extent.width, drawRect.extent.height, 1},
-        WORKGROUP_SIZE
+        VkExtent3D{
+            .width = WORKGROUP_SIZE, .height = WORKGROUP_SIZE, .depth = 1
+        }
     );
 
     vkCmdBindShadersEXT(cmd, 1, &stage, nullptr);

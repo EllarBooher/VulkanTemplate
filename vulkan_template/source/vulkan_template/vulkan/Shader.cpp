@@ -1,5 +1,6 @@
 #include "Shader.hpp"
 
+#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include <fstream>
@@ -163,17 +164,17 @@ auto loadShaderModule(VkDevice const device, std::filesystem::path const& path)
 void computeDispatch(
     VkCommandBuffer const cmd,
     VkExtent3D const invocations,
-    uint32_t const workgroupSize
+    VkExtent3D const workgroupSize
 )
 {
     uint32_t const X{
-        ::computeDispatchCount(invocations.width, workgroupSize)
+        ::computeDispatchCount(invocations.width, workgroupSize.width)
     };
     uint32_t const Y{
-        ::computeDispatchCount(invocations.height, workgroupSize)
+        ::computeDispatchCount(invocations.height, workgroupSize.height)
     };
     uint32_t const Z{
-        ::computeDispatchCount(invocations.depth, workgroupSize)
+        ::computeDispatchCount(invocations.depth, workgroupSize.depth)
     };
 
     vkCmdDispatch(cmd, X, Y, Z);
