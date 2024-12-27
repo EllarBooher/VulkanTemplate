@@ -805,6 +805,7 @@ auto createGaussianBlurPassResources(
     if (!outputSetResult.has_value())
     {
         VKT_ERROR("Failed to allocate output image set.");
+        return std::nullopt;
     }
     resources.fullyBlurredImageSet = outputSetResult.value();
 
