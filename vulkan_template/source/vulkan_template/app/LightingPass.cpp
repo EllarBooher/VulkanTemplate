@@ -648,23 +648,47 @@ auto createGaussianBlurPassResources(
     };
     std::vector<VkPushConstantRange> const ranges{};
 
-    char const* SHADER_PATH{"shaders/gaussian_blur/gaussian_blur_vert.comp.spv"
-    };
-    auto const shaderResult = vkt::loadShaderObject(
-        device,
-        SHADER_PATH,
-        VK_SHADER_STAGE_COMPUTE_BIT,
-        (VkFlags)0,
-        layouts,
-        ranges,
-        VkSpecializationInfo{}
-    );
-    if (!shaderResult.has_value())
     {
-        VKT_ERROR("Failed to compile shader.");
-        return std::nullopt;
+        char const* SHADER_PATH{
+            "shaders/gaussian_blur/gaussian_blur.vertical.comp.spv"
+        };
+        auto const shaderResult = vkt::loadShaderObject(
+            device,
+            SHADER_PATH,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            (VkFlags)0,
+            layouts,
+            ranges,
+            VkSpecializationInfo{}
+        );
+        if (!shaderResult.has_value())
+        {
+            VKT_ERROR("Failed to compile shader.");
+            return std::nullopt;
+        }
+        resources.verticalBlurShader = shaderResult.value();
     }
-    resources.verticalBlurShader = shaderResult.value();
+
+    {
+        char const* SHADER_PATH{
+            "shaders/gaussian_blur/gaussian_blur.horizontal.comp.spv"
+        };
+        auto const shaderResult = vkt::loadShaderObject(
+            device,
+            SHADER_PATH,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            (VkFlags)0,
+            layouts,
+            ranges,
+            VkSpecializationInfo{}
+        );
+        if (!shaderResult.has_value())
+        {
+            VKT_ERROR("Failed to compile shader.");
+            return std::nullopt;
+        }
+        resources.horizontalBlurShader = shaderResult.value();
+    }
 
     VkPipelineLayoutCreateInfo const layoutCreateInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -680,7 +704,7 @@ auto createGaussianBlurPassResources(
     };
 
     if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
-            device, &layoutCreateInfo, nullptr, &resources.verticalBlurLayout
+            device, &layoutCreateInfo, nullptr, &resources.blurLayout
         )};
         pipelineLayoutResult != VK_SUCCESS)
     {
@@ -688,33 +712,71 @@ auto createGaussianBlurPassResources(
         return std::nullopt;
     }
 
-    auto outputImageResult{vkt::ImageView::allocate(
-        device,
-        allocator,
-        inputImage.image().allocationParameters(),
-        inputImage.allocationParameters()
-    )};
-    if (!outputImageResult.has_value())
     {
-        VKT_ERROR("Failed to create gaussian blur output image.");
-        return std::nullopt;
+        auto outputImageResult{vkt::ImageView::allocate(
+            device,
+            allocator,
+            inputImage.image().allocationParameters(),
+            inputImage.allocationParameters()
+        )};
+        if (!outputImageResult.has_value())
+        {
+            VKT_ERROR("Failed to create gaussian blur output image.");
+            return std::nullopt;
+        }
+        resources.halfBlurredImage = std::make_unique<vkt::ImageView>(
+            std::move(outputImageResult).value()
+        );
     }
-    resources.outputImage =
-        std::make_unique<vkt::ImageView>(std::move(outputImageResult).value());
+    {
+        auto outputImageResult{vkt::ImageView::allocate(
+            device,
+            allocator,
+            inputImage.image().allocationParameters(),
+            inputImage.allocationParameters()
+        )};
+        if (!outputImageResult.has_value())
+        {
+            VKT_ERROR("Failed to create gaussian blur output image.");
+            return std::nullopt;
+        }
+        resources.fullyBlurredImage = std::make_unique<vkt::ImageView>(
+            std::move(outputImageResult).value()
+        );
+    }
 
-    auto inputOutputSetResult{::fillInputOutputComputeDescriptor(
-        device,
-        inputImage,
-        *resources.outputImage,
-        descriptorAllocator,
-        resources.inputOutputLayout
-    )};
-    if (!inputOutputSetResult.has_value())
     {
-        VKT_ERROR("Failed to fill input output image set for gaussian blur.");
-        return std::nullopt;
+        auto inputOutputSetResult{::fillInputOutputComputeDescriptor(
+            device,
+            inputImage,
+            *resources.halfBlurredImage,
+            descriptorAllocator,
+            resources.inputOutputLayout
+        )};
+        if (!inputOutputSetResult.has_value())
+        {
+            VKT_ERROR("Failed to fill input output image set for gaussian blur."
+            );
+            return std::nullopt;
+        }
+        resources.verticalBlurInputOutputSet = inputOutputSetResult.value();
     }
-    resources.inputOutputImageSet = inputOutputSetResult.value();
+    {
+        auto inputOutputSetResult{::fillInputOutputComputeDescriptor(
+            device,
+            *resources.halfBlurredImage,
+            *resources.fullyBlurredImage,
+            descriptorAllocator,
+            resources.inputOutputLayout
+        )};
+        if (!inputOutputSetResult.has_value())
+        {
+            VKT_ERROR("Failed to fill input output image set for gaussian blur."
+            );
+            return std::nullopt;
+        }
+        resources.horizontalBlurInputOutputSet = inputOutputSetResult.value();
+    }
 
     // Create a descriptor layout/set for binding this output image alone to a
     // compute shader
@@ -732,19 +794,19 @@ auto createGaussianBlurPassResources(
         VKT_ERROR("Failed to allocate render target descriptor set layout.");
         return std::nullopt;
     }
-    resources.outputImageLayout = outputImageLayoutResult.value();
+    resources.fullyBlurredImageLayout = outputImageLayoutResult.value();
 
     auto outputSetResult{::fillSingleComputeImageDescriptor(
         device,
-        *resources.outputImage,
+        *resources.fullyBlurredImage,
         descriptorAllocator,
-        resources.outputImageLayout
+        resources.fullyBlurredImageLayout
     )};
     if (!outputSetResult.has_value())
     {
         VKT_ERROR("Failed to allocate output image set.");
     }
-    resources.outputImageSet = outputSetResult.value();
+    resources.fullyBlurredImageSet = outputSetResult.value();
 
     return resourcesResult;
 }
@@ -793,11 +855,14 @@ void cleanResources(
 )
 {
     vkDestroyDescriptorSetLayout(device, resources.inputOutputLayout, nullptr);
-    vkDestroyDescriptorSetLayout(device, resources.outputImageLayout, nullptr);
+    vkDestroyDescriptorSetLayout(
+        device, resources.fullyBlurredImageLayout, nullptr
+    );
 
     vkDestroyShaderEXT(device, resources.verticalBlurShader, nullptr);
+    vkDestroyShaderEXT(device, resources.horizontalBlurShader, nullptr);
 
-    vkDestroyPipelineLayout(device, resources.verticalBlurLayout, nullptr);
+    vkDestroyPipelineLayout(device, resources.blurLayout, nullptr);
 }
 
 } // namespace
@@ -916,6 +981,7 @@ auto LightingPass::create(
     if (!gaussianBlurPassResourcesResult.has_value())
     {
         VKT_ERROR("Failed to create gaussian blur pass resources.");
+        return std::nullopt;
     }
     lightingPass.m_gaussianBlurPassResources =
         std::move(gaussianBlurPassResourcesResult).value();
@@ -1031,38 +1097,81 @@ void recordBlurAO(
 )
 {
     inputImage.recordTransitionBarriered(cmd, VK_IMAGE_LAYOUT_GENERAL);
-    resources.outputImage->recordTransitionBarriered(
+    resources.fullyBlurredImage->recordTransitionBarriered(
+        cmd, VK_IMAGE_LAYOUT_GENERAL
+    );
+    resources.halfBlurredImage->recordTransitionBarriered(
         cmd, VK_IMAGE_LAYOUT_GENERAL
     );
 
     VkClearColorValue const clearColor{.float32 = {0.0F, 0.0F, 0.0F, 1.0F}};
-    resources.outputImage->image().recordClearEntireColor(cmd, &clearColor);
+    resources.fullyBlurredImage->image().recordClearEntireColor(
+        cmd, &clearColor
+    );
+    resources.halfBlurredImage->image().recordClearEntireColor(
+        cmd, &clearColor
+    );
 
     uint32_t constexpr WORKGROUP_WIDTH{32};
 
     VkShaderStageFlagBits const stage{VK_SHADER_STAGE_COMPUTE_BIT};
-    std::vector<VkDescriptorSet> descriptors{resources.inputOutputImageSet};
-    vkCmdBindDescriptorSets(
-        cmd,
-        VK_PIPELINE_BIND_POINT_COMPUTE,
-        resources.verticalBlurLayout,
-        0,
-        VKR_ARRAY(descriptors),
-        VKR_ARRAY_NONE
-    );
 
-    VkShaderEXT const shader{resources.verticalBlurShader};
+    {
+        std::vector<VkDescriptorSet> descriptors{
+            resources.verticalBlurInputOutputSet
+        };
+        vkCmdBindDescriptorSets(
+            cmd,
+            VK_PIPELINE_BIND_POINT_COMPUTE,
+            resources.blurLayout,
+            0,
+            VKR_ARRAY(descriptors),
+            VKR_ARRAY_NONE
+        );
 
-    vkCmdBindShadersEXT(cmd, 1, &stage, &shader);
+        vkCmdBindShadersEXT(cmd, 1, &stage, &resources.verticalBlurShader);
 
-    VkExtent3D const invocations{
-        .width = inputImage.image().extent3D().width, .height = 1, .depth = 1
-    };
-    VkExtent3D constexpr VERTICAL_LOCAL_SIZE{
-        .width = 32, .height = 1, .depth = 1
-    };
+        VkExtent3D const verticalGlobalSize{
+            .width = inputImage.image().extent3D().width,
+            .height = 1,
+            .depth = 1
+        };
+        VkExtent3D constexpr VERTICAL_LOCAL_SIZE{
+            .width = 32, .height = 1, .depth = 1
+        };
 
-    vkt::computeDispatch(cmd, invocations, VERTICAL_LOCAL_SIZE);
+        vkt::computeDispatch(cmd, verticalGlobalSize, VERTICAL_LOCAL_SIZE);
+    }
+
+    {
+        std::vector<VkDescriptorSet> descriptors{
+            resources.horizontalBlurInputOutputSet
+        };
+        vkCmdBindDescriptorSets(
+            cmd,
+            VK_PIPELINE_BIND_POINT_COMPUTE,
+            resources.blurLayout,
+            0,
+            VKR_ARRAY(descriptors),
+            VKR_ARRAY_NONE
+        );
+
+        vkCmdBindShadersEXT(cmd, 1, &stage, &resources.horizontalBlurShader);
+
+        VkExtent3D const horizontalGlobalSize{
+            .width = 1,
+            .height = inputImage.image().extent3D().height,
+            .depth = 1
+        };
+        VkExtent3D constexpr HORIZONTAL_LOCAL_SIZE{
+            .width = 1, .height = 32, .depth = 1
+        };
+
+        vkt::computeDispatch(cmd, horizontalGlobalSize, HORIZONTAL_LOCAL_SIZE);
+    }
+
+    VkShaderEXT constexpr NULL_SHADER{VK_NULL_HANDLE};
+    vkCmdBindShadersEXT(cmd, 1, &stage, &NULL_SHADER);
 }
 
 void recordDrawLighting(
@@ -1225,8 +1334,9 @@ void LightingPass::recordDraw(
     }
 
     VkDescriptorSet const AOSet{
-        m_parameters.blurAOTexture ? m_gaussianBlurPassResources.outputImageSet
-                                   : m_ssaoPassResources.ambientOcclusionSet
+        m_parameters.blurAOTexture
+            ? m_gaussianBlurPassResources.fullyBlurredImageSet
+            : m_ssaoPassResources.ambientOcclusionSet
     };
 
     if (m_parameters.copyAOToOutputTexture)

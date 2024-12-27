@@ -4,7 +4,15 @@
 // Each invocation processes a single column of the image
 // To perform a full gaussian blur, apply a horizontal blur alongside this
 
+#ifndef GAUSSIAN_BLUR_DIRECTION
+#define GAUSSIAN_BLUR_DIRECTION 0
+#endif
+
+#if GAUSSIAN_BLUR_DIRECTION == 0
 layout(local_size_x = 32, local_size_y = 1) in;
+#else
+layout(local_size_x = 1, local_size_y = 32) in;
+#endif
 
 layout(r16, set = 0, binding = 0) uniform readonly image2D imageInput;
 layout(r16, set = 0, binding = 1) uniform writeonly image2D imageOutput;
@@ -44,10 +52,19 @@ const float gWeights[2 * gKernelWidth] = {
 void main()
 {
 	// Assume imageInput and imageOut are the same size
-	const vec2 size = imageSize(imageInput);
-	const uint column = gl_GlobalInvocationID.x;
+	const uvec2 size = imageSize(imageInput);
 
-	if(column > size.x)
+#if GAUSSIAN_BLUR_DIRECTION == 0
+	const uvec2 startPos = uvec2(gl_GlobalInvocationID.x, 0);
+	const uvec2 blurDirection = uvec2(0, 1);
+	const uint steps = size.y;
+#else
+	const uvec2 startPos = uvec2(0, gl_GlobalInvocationID.y);
+	const uvec2 blurDirection = uvec2(1, 0);
+	const uint steps = size.x;
+#endif
+
+	if(startPos.x > size.x || startPos.y > size.y)
 	{
 		return;
 	}
@@ -60,7 +77,7 @@ void main()
 	uint oldestNeighborIndex = 0;
 
 	// Populate initial values
-	const vec4 edge = imageLoad(imageInput, ivec2(column, 0));
+	const vec4 edge = imageLoad(imageInput, ivec2(startPos));
 
 	for(uint i = 0; i <= gKernelRadius; i++)
 	{
@@ -69,11 +86,11 @@ void main()
 	}
 	for(uint i = gKernelRadius + 1; i < gKernelWidth; i++)
 	{
-		neighborhood[i] = imageLoad(imageInput, ivec2(column, i));
+		neighborhood[i] = imageLoad(imageInput, ivec2(startPos + i * blurDirection));
 	}
 
 	// Perform the convolution
-	for(uint row = 0; row < size.y; row++)
+	for(uint i = 0; i < steps; i++)
 	{
 		// Example diagram how the weights are read:
 		// Values are distance from the center of a kernel of radius 3
@@ -94,12 +111,14 @@ void main()
 			blur += neighborhood[i] * gWeights[i + weightOffset];
 		}
 
-		imageStore(imageOutput, ivec2(column, row), blur);
+		imageStore(imageOutput, ivec2(startPos + i * blurDirection), blur);
 
 		// The next sample is at the edge of the neighborhood, 
 		// so one past the kernel
+
+		// TODO: Split off last gKernelRadius reads to avoid loads out of bounds
 		neighborhood[oldestNeighborIndex] = 
-			imageLoad(imageInput, ivec2(column, row + gKernelRadius + 1));
+			imageLoad(imageInput, ivec2(startPos + (i + gKernelRadius + 1) * blurDirection));
 
 		oldestNeighborIndex += 1;
 		

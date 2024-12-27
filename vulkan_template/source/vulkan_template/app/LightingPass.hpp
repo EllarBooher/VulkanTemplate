@@ -115,20 +115,24 @@ struct GaussianBlurPassResources
 
     VkDescriptorSetLayout inputOutputLayout{VK_NULL_HANDLE};
 
-    VkDescriptorSet inputOutputImageSet{VK_NULL_HANDLE};
+    VkDescriptorSet verticalBlurInputOutputSet{VK_NULL_HANDLE};
+    VkDescriptorSet horizontalBlurInputOutputSet{VK_NULL_HANDLE};
 
     // TODO: figure out a better spot to hold these resources. Perhaps a array
     // in the out LightingPass object, where they can be created beforehand then
     // passed to be written into the inputOutputImageSet. This single image
     // layout is duplicated in a lot of places.
 
+    std::unique_ptr<ImageView> halfBlurredImage{VK_NULL_HANDLE};
+
     // layout(r16, set = 0, binding = 0) uniform image2D;
-    VkDescriptorSetLayout outputImageLayout{VK_NULL_HANDLE};
-    VkDescriptorSet outputImageSet{VK_NULL_HANDLE};
-    std::unique_ptr<ImageView> outputImage{VK_NULL_HANDLE};
+    VkDescriptorSetLayout fullyBlurredImageLayout{VK_NULL_HANDLE};
+    VkDescriptorSet fullyBlurredImageSet{VK_NULL_HANDLE};
+    std::unique_ptr<ImageView> fullyBlurredImage{VK_NULL_HANDLE};
 
     VkShaderEXT verticalBlurShader{VK_NULL_HANDLE};
-    VkPipelineLayout verticalBlurLayout{VK_NULL_HANDLE};
+    VkShaderEXT horizontalBlurShader{VK_NULL_HANDLE};
+    VkPipelineLayout blurLayout{VK_NULL_HANDLE};
 };
 
 struct LightingPass
