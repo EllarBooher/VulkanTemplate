@@ -1103,19 +1103,20 @@ namespace vkt
 {
 // NOLINTBEGIN(readability-magic-numbers)
 LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
-    .enableAOFromFrontFace = true,
-    .enableAOFromBackFace = true,
-    .enableRandomNormalSampling = true,
-    .normalizeRandomNormals = false,
 
     .lightAxisAngles = glm::vec3{0.0F, 1.3F, 0.8F},
     .lightStrength = 10.0F,
     .ambientStrength = 0.1F,
 
+    .gbufferWhiteOverride = true,
+
+    .enableAOFromFrontFace = true,
+    .enableAOFromBackFace = true,
+    .enableRandomNormalSampling = true,
+    .normalizeRandomNormals = false,
     .occluderRadius = 1.0F,
     .occluderBias = 0.05F,
     .aoScale = 0.03F,
-    .gbufferWhiteOverride = true,
 
     .blurAOTexture = true,
 
@@ -1708,12 +1709,12 @@ void recordDrawLighting(
             },
         .lightStrength = parameters.lightStrength,
         .ambientStrength = parameters.ambientStrength,
-        .shadowReceiverConstantBias = parameters.shadowReceiverConstantBias,
+        .shadowReceiverPlaneDepthBias = parameters.shadowReceiverPlaneDepthBias,
         .gbufferWhiteOverride =
             parameters.gbufferWhiteOverride ? VK_TRUE : VK_FALSE,
         .lightProjView = computeLightProjView(parameters, REVERSE_Z),
         .shadowMapSize = glm::uvec2{shadowMapSize.width, shadowMapSize.height},
-        .shadowReceiverPlaneDepthBias = parameters.shadowReceiverPlaneDepthBias,
+        .shadowReceiverConstantBias = parameters.shadowReceiverConstantBias,
         .enableShadows = parameters.enableShadows ? VK_TRUE : VK_FALSE,
     };
 
@@ -1847,17 +1848,17 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
         ImGui::SeparatorText("Ambient Occlusion");
         PropertyTable table{PropertyTable::begin()};
         table.rowBoolean(
-            "Enable AO from Front Face",
+            {.name = "Enable AO from Front Face"},
             m_parameters.enableAOFromFrontFace,
             DEFAULT_PARAMETERS.enableAOFromFrontFace
         );
         table.rowBoolean(
-            "Enable AO from Back Face",
+            {.name = "Enable AO from Back Face"},
             m_parameters.enableAOFromBackFace,
             DEFAULT_PARAMETERS.enableAOFromBackFace
         );
         table.rowBoolean(
-            "Reflect SSAO samples randomly",
+            {.name = "Reflect SSAO samples randomly"},
             m_parameters.enableRandomNormalSampling,
             DEFAULT_PARAMETERS.enableRandomNormalSampling
         );
@@ -1865,7 +1866,7 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
         table.childPropertyBegin(false);
         ImGui::BeginDisabled(!m_parameters.enableRandomNormalSampling);
         table.rowBoolean(
-            "Normalize Reflection Normals",
+            {.name = "Normalize Reflection Normals"},
             m_parameters.normalizeRandomNormals,
             DEFAULT_PARAMETERS.normalizeRandomNormals
         );
@@ -1876,7 +1877,7 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             .speed = 0.0001F,
         };
         table.rowFloat(
-            "AO Occluder Radius",
+            {.name = "AO Occluder Radius"},
             m_parameters.occluderRadius,
             DEFAULT_PARAMETERS.occluderRadius,
             RADIUS_BEHAVIOR
@@ -1886,7 +1887,7 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             .speed = 0.001F,
         };
         table.rowFloat(
-            "AO Occluder Bias",
+            {.name = "AO Occluder Bias"},
             m_parameters.occluderBias,
             DEFAULT_PARAMETERS.occluderBias,
             BIAS_BEHAVIOR
@@ -1896,18 +1897,20 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             .speed = 0.01F,
         };
         table.rowFloat(
-            "AO Sample Scale",
+            {.name = "AO Sample Scale",
+             .tooltip = "Scales the length of AO occluder samples from the "
+                        "occludee texel."},
             m_parameters.aoScale,
             DEFAULT_PARAMETERS.aoScale,
             SCALE_BEHAVIOR
         );
         table.rowBoolean(
-            "Copy AO to Output Texture",
+            {.name = "Copy AO to Output Texture"},
             m_parameters.copyAOToOutputTexture,
             DEFAULT_PARAMETERS.copyAOToOutputTexture
         );
         table.rowBoolean(
-            "Apply Gaussian Blur to AO",
+            {.name = "Apply Gaussian Blur to AO"},
             m_parameters.blurAOTexture,
             DEFAULT_PARAMETERS.blurAOTexture
         );
@@ -1925,7 +1928,7 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
         };
 
         table.rowVec3(
-            "Light Axis Angles",
+            {.name = "Light Axis Angles"},
             m_parameters.lightAxisAngles,
             DEFAULT_PARAMETERS.lightAxisAngles,
             AXIS_ANGLE_BEHAVIOR
@@ -1936,25 +1939,25 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             .bounds = FloatBounds{.min = 0.0F},
         };
         table.rowFloat(
-            "Directional Light Strength",
+            {.name = "Directional Light Strength"},
             m_parameters.lightStrength,
             DEFAULT_PARAMETERS.lightStrength,
             LIGHT_STRENGTH_BEHAVIOR
         );
         table.rowFloat(
-            "Ambient Strength",
+            {.name = "Ambient Strength"},
             m_parameters.ambientStrength,
             DEFAULT_PARAMETERS.ambientStrength,
             LIGHT_STRENGTH_BEHAVIOR
         );
         table.rowBoolean(
-            "Override Albedo/Specular as White",
+            {.name = "Override Albedo/Specular as White"},
             m_parameters.gbufferWhiteOverride,
             DEFAULT_PARAMETERS.gbufferWhiteOverride
         );
 
         table.rowBoolean(
-            "Enable Shadows",
+            {.name = "Enable Shadows"},
             m_parameters.enableShadows,
             DEFAULT_PARAMETERS.enableShadows
         );
@@ -1963,27 +1966,32 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             .speed = 0.01F,
         };
         table.rowFloat(
-            "Shadow Reciever Plane Depth Bias",
+            {.name = "Shadow Reciever Plane Depth Bias",
+             .tooltip =
+                 "All shadow receiving texels are offset by their surface "
+                 "normal, which is linearly scaled by the cosine of the "
+                 "normal's angle with the light. This factor provides final "
+                 "manual scaling to that offset."},
             m_parameters.shadowReceiverPlaneDepthBias,
             DEFAULT_PARAMETERS.shadowReceiverPlaneDepthBias,
             DEPTH_BIAS_BEHAVIOR
         );
 
         table.rowFloat(
-            "Shadow Receiver Constant Bias",
+            {.name = "Shadow Receiver Constant Bias"},
             m_parameters.shadowReceiverConstantBias,
             DEFAULT_PARAMETERS.shadowReceiverConstantBias,
             DEPTH_BIAS_BEHAVIOR
         );
 
         table.rowFloat(
-            "Fixed Function Depth Bias Constant",
+            {.name = "Fixed Function Depth Bias Constant"},
             m_parameters.depthBiasConstant,
             DEFAULT_PARAMETERS.depthBiasConstant,
             DEPTH_BIAS_BEHAVIOR
         );
         table.rowFloat(
-            "Fixed Function Depth Bias Slope",
+            {.name = "Fixed Function Depth Bias Slope"},
             m_parameters.depthBiasSlope,
             DEFAULT_PARAMETERS.depthBiasSlope,
             DEPTH_BIAS_BEHAVIOR
@@ -1997,13 +2005,13 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
                 }
         };
         table.rowFloat(
-            "Light Projection Width",
+            {.name = "Light Projection Width"},
             m_parameters.lightProjViewExtent.x,
             DEFAULT_PARAMETERS.lightProjViewExtent.x,
             PROJECTION_EXTENT_BEHAVIOR
         );
         table.rowFloat(
-            "Light Projection Height",
+            {.name = "Light Projection Height"},
             m_parameters.lightProjViewExtent.y,
             DEFAULT_PARAMETERS.lightProjViewExtent.y,
             PROJECTION_EXTENT_BEHAVIOR
@@ -2015,7 +2023,7 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
                 FloatBounds{.min = 0.0F, .max = m_parameters.shadowFarPlane}
         };
         table.rowFloat(
-            "Light Shadow Depth Near Plane",
+            {.name = "Light Shadow Depth Near Plane"},
             m_parameters.shadowNearPlane,
             glm::min(
                 DEFAULT_PARAMETERS.shadowNearPlane, m_parameters.shadowFarPlane
@@ -2031,7 +2039,7 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
                 }
         };
         table.rowFloat(
-            "Light Shadow Depth Far Plane",
+            {.name = "Light Shadow Depth Far Plane"},
             m_parameters.shadowFarPlane,
             glm::max(
                 DEFAULT_PARAMETERS.shadowFarPlane, m_parameters.shadowNearPlane

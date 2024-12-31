@@ -25,6 +25,12 @@ struct PropertySliderBehavior
     FloatBounds bounds{};
 };
 
+struct PropertyTableRowTexts
+{
+    std::string name{""};
+    std::string tooltip{""};
+};
+
 struct PropertyTable
 {
 private:
@@ -63,7 +69,7 @@ private:
     {
     }
 
-    static void nameColumn(std::string const& name);
+    static void nameColumn(PropertyTableRowTexts const& rowTexts);
 
     static auto resetColumn(std::string const& name, bool visible) -> bool;
 
@@ -93,7 +99,7 @@ private:
 
     // If this returns false, the row should not be modified further.
     // Do NOT call rowEnd if this returns false.
-    auto rowBegin(std::string const& name) -> bool;
+    auto rowBegin(PropertyTableRowTexts const& name) -> bool;
     void rowEnd();
 
 public:
@@ -117,9 +123,9 @@ public:
 
     // This adds a new row for the collapsing button.
     // See PropertyTable::childPropertyBegin.
-    auto
-    rowChildPropertyBegin(std::string const& name, bool startCollapsed = true)
-        -> PropertyTable&;
+    auto rowChildPropertyBegin(
+        PropertyTableRowTexts const& rowTexts, bool startCollapsed = true
+    ) -> PropertyTable&;
 
     // A corresponding PropertyTable::rowChildPropertyBegin
     // or PropertyTable::childPropertyBegin must have been called.
@@ -128,7 +134,7 @@ public:
     // Adds a row that contains a dropdown, containing a list of values,
     // alongside a reset button.
     auto rowDropdown(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         size_t& selectedIndex,
         size_t const& defaultIndex,
         std::span<std::string const> displayValues
@@ -137,20 +143,21 @@ public:
     // Adds a row that runs a callback for the content column. Useful to render
     // custom UI.
     auto rowCustom(
-        std::string const& name, std::function<void()> const& contentCallback
+        PropertyTableRowTexts const& rowTexts,
+        std::function<void()> const& contentCallback
     ) -> PropertyTable&;
 
     // Adds a row that runs a callback for the content column + reset column.
     // Useful to render custom UI.
     auto rowCustom(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         std::function<void()> const& contentCallback,
         bool resetVisible,
         std::function<void()> const& resetCallback
     ) -> PropertyTable&;
 
     auto rowButton(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         std::function<void()> const& clickedCallback,
         std::string const& label
     ) -> PropertyTable&;
@@ -158,24 +165,27 @@ public:
     // Adds a row that contains an interactable text entry,
     // alongside a reset button.
     auto rowTextInput(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         std::string& value,
         std::string const& resetValue
     ) -> PropertyTable&;
 
     // Adds a row that contains text that is interactable, but readonly.
     auto rowReadOnlyTextInput(
-        std::string const& name, std::string const& value, bool multiline
+        PropertyTableRowTexts const& rowTexts,
+        std::string const& value,
+        bool multiline
     ) -> PropertyTable&;
 
     // Adds a row that contains some read only text.
-    auto rowTextLabel(std::string const& name, std::string const& value)
-        -> PropertyTable&;
+    auto rowTextLabel(
+        PropertyTableRowTexts const& rowTexts, std::string const& value
+    ) -> PropertyTable&;
 
     // Adds a row that contains an interactable 32-bit signed integer entry,
     // alongside a reset button.
     auto rowInteger(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         int32_t& value,
         int32_t const& resetValue,
         PropertySliderBehavior behavior
@@ -183,20 +193,21 @@ public:
 
     // Adds a row that contains a read only integer.
     // TODO: more generic row types for all integer widths and types
-    auto rowReadOnlyInteger(std::string const& name, int32_t const& value)
-        -> PropertyTable&;
+    auto rowReadOnlyInteger(
+        PropertyTableRowTexts const& rowTexts, int32_t const& value
+    ) -> PropertyTable&;
 
     // Adds a row that contains an interactable three-float vector entry,
     // alongside a reset button.
     auto rowVec3(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         glm::vec3& value,
         glm::vec3 const& resetValue,
         PropertySliderBehavior behavior
     ) -> PropertyTable&;
 
     auto rowColor(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         glm::vec3& value,
         glm::vec3 const& resetValue,
         PropertySliderBehavior behavior,
@@ -204,30 +215,35 @@ public:
     ) -> PropertyTable&;
 
     // Adds a row that contains a non-interactable three-float vector entry.
-    auto rowReadOnlyVec3(std::string const& name, glm::vec3 const& value)
-        -> PropertyTable&;
+    auto rowReadOnlyVec3(
+        PropertyTableRowTexts const& rowTexts, glm::vec3 const& value
+    ) -> PropertyTable&;
 
     // Adds a row that contains an interactable float entry,
     // alongside a reset button.
     auto rowFloat(
-        std::string const& name,
+        PropertyTableRowTexts const& rowTexts,
         float& value,
         float const& resetValue,
         PropertySliderBehavior behavior
     ) -> PropertyTable&;
 
     // Adds a row that contains a non-interactable float entry.
-    auto rowReadOnlyFloat(std::string const& name, float const& value)
+    auto
+    rowReadOnlyFloat(PropertyTableRowTexts const& rowTexts, float const& value)
         -> PropertyTable&;
 
     // Adds a row that contains an interactable boolean entry,
     // alongside a reset button.
-    auto
-    rowBoolean(std::string const& name, bool& value, bool const& resetValue)
-        -> PropertyTable&;
+    auto rowBoolean(
+        PropertyTableRowTexts const& rowTexts,
+        bool& value,
+        bool const& resetValue
+    ) -> PropertyTable&;
 
     // Adds a row that contains a non-interactable float entry.
-    auto rowReadOnlyBoolean(std::string const& name, bool const& value)
+    auto
+    rowReadOnlyBoolean(PropertyTableRowTexts const& rowTexts, bool const& value)
         -> PropertyTable&;
 };
 } // namespace vkt

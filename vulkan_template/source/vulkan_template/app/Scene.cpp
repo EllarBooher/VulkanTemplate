@@ -93,41 +93,46 @@ void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
 
     PropertyTable table{PropertyTable::begin()};
     table.rowVec3(
-        "Camera Position",
+        {.name = "Camera Position"},
         m_camera.position,
         DEFAULT_CAMERA.position,
         POSITION_BEHAVIOR
     );
     table.rowVec3(
-        "Camera Orientation",
+        {.name = "Camera Orientation"},
         m_camera.axisAngles,
         DEFAULT_CAMERA.axisAngles,
         AXIS_ANGLES_BEHAVIOR
     );
     table.rowVec3(
-        "Camera Scale", m_camera.scale, DEFAULT_CAMERA.scale, SCALE_BEHAVIOR
+        {.name = "Camera Scale"},
+        m_camera.scale,
+        DEFAULT_CAMERA.scale,
+        SCALE_BEHAVIOR
     );
 
     table.rowVec3(
-        "Mesh Position",
+        {.name = "Mesh Position"},
         m_meshInstance.position,
         DEFAULT_MESH_INSTANCE.position,
         POSITION_BEHAVIOR
     );
     table.rowVec3(
-        "Mesh Orientation",
+        {.name = "Mesh Orientation"},
         m_meshInstance.axisAngles,
         DEFAULT_MESH_INSTANCE.axisAngles,
         AXIS_ANGLES_BEHAVIOR
     );
     table.rowVec3(
-        "Mesh Scale",
+        {.name = "Mesh Scale"},
         m_meshInstance.scale,
         DEFAULT_MESH_INSTANCE.scale,
         SCALE_BEHAVIOR
     );
     float scaleAll{1.0F};
-    table.rowFloat("Mesh Scale All", scaleAll, 1.0F, SCALE_ALL_BEHAVIOR);
+    table.rowFloat(
+        {.name = "Mesh Scale All"}, scaleAll, 1.0F, SCALE_ALL_BEHAVIOR
+    );
     m_meshInstance.scale *= scaleAll;
 
     table.end();

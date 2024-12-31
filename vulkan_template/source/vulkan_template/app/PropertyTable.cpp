@@ -12,10 +12,29 @@ namespace vkt
 {
 PropertyTable::PropertyTable() = default;
 
-void PropertyTable::nameColumn(std::string const& name)
+void PropertyTable::nameColumn(PropertyTableRowTexts const& rowTexts)
 {
     ImGui::TableSetColumnIndex(PROPERTY_INDEX);
-    ImGui::Text("%s", name.c_str());
+    ImGui::Text("%s", rowTexts.name.c_str());
+
+    if (!rowTexts.tooltip.empty())
+    {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetNextWindowBgAlpha(1.0F);
+            if (ImGui::BeginTooltip())
+            {
+                float constexpr TOOLTIP_WIDTH_EM{40.0F};
+                ImGui::PushTextWrapPos(
+                    TOOLTIP_WIDTH_EM * ImGui::GetTextLineHeight()
+                );
+                ImGui::Text(rowTexts.tooltip.c_str());
+                ImGui::EndTooltip();
+            }
+        }
+    }
 }
 
 auto PropertyTable::resetColumn(std::string const& name, bool const visible)
@@ -151,10 +170,10 @@ auto PropertyTable::childPropertyBegin(bool const startCollapsed)
 }
 
 auto PropertyTable::rowChildPropertyBegin(
-    std::string const& name, bool const startCollapsed
+    PropertyTableRowTexts const& rowTexts, bool const startCollapsed
 ) -> PropertyTable&
 {
-    if (Self::rowBegin(name))
+    if (Self::rowBegin(rowTexts))
     {
         Self::rowEnd();
     }
@@ -184,7 +203,7 @@ auto PropertyTable::childPropertyEnd() -> PropertyTable&
     return *this;
 }
 
-auto PropertyTable::rowBegin(std::string const& name) -> bool
+auto PropertyTable::rowBegin(PropertyTableRowTexts const& label) -> bool
 {
     assert(!m_rowOpen && "Row opened without ending the previous one.");
 
@@ -200,11 +219,11 @@ auto PropertyTable::rowBegin(std::string const& name) -> bool
     m_rowOpen = true;
 
     ImGui::PushID(static_cast<int32_t>(m_propertyCount));
-    ImGui::PushID(name.c_str());
+    ImGui::PushID(label.name.c_str());
 
     ImGui::TableNextRow();
 
-    Self::nameColumn(name);
+    Self::nameColumn(label);
 
     return true;
 }
@@ -217,13 +236,13 @@ void PropertyTable::rowEnd()
 }
 
 auto PropertyTable::rowDropdown(
-    std::string const& name,
+    PropertyTableRowTexts const& rowTexts,
     size_t& selectedIndex,
     size_t const& defaultIndex,
     std::span<std::string const> const displayValues
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -264,7 +283,7 @@ auto PropertyTable::rowDropdown(
 
     ImGui::EndDisabled();
 
-    if (Self::resetColumn(name, selectedIndex != defaultIndex))
+    if (Self::resetColumn(rowTexts.name, selectedIndex != defaultIndex))
     {
         selectedIndex = defaultIndex;
     }
@@ -275,10 +294,11 @@ auto PropertyTable::rowDropdown(
 }
 
 auto PropertyTable::rowCustom(
-    std::string const& name, std::function<void()> const& contentCallback
+    PropertyTableRowTexts const& rowTexts,
+    std::function<void()> const& contentCallback
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -293,13 +313,13 @@ auto PropertyTable::rowCustom(
 }
 
 auto PropertyTable::rowCustom(
-    std::string const& name,
+    PropertyTableRowTexts const& rowTexts,
     std::function<void()> const& contentCallback,
     bool const resetVisible,
     std::function<void()> const& resetCallback
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -308,7 +328,7 @@ auto PropertyTable::rowCustom(
 
     contentCallback();
 
-    if (Self::resetColumn(name, resetVisible))
+    if (Self::resetColumn(rowTexts.name, resetVisible))
     {
         resetCallback();
     }
@@ -319,12 +339,12 @@ auto PropertyTable::rowCustom(
 }
 
 auto PropertyTable::rowButton(
-    std::string const& name,
+    PropertyTableRowTexts const& rowTexts,
     std::function<void()> const& clickedCallback,
     std::string const& label
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -342,10 +362,12 @@ auto PropertyTable::rowButton(
 }
 
 auto PropertyTable::rowTextInput(
-    std::string const& name, std::string& value, std::string const& resetValue
+    PropertyTableRowTexts const& rowTexts,
+    std::string& value,
+    std::string const& resetValue
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -353,10 +375,10 @@ auto PropertyTable::rowTextInput(
     ImGui::TableSetColumnIndex(VALUE_INDEX);
 
     ImGui::InputText(
-        fmt::format("##{}{}", name, m_propertyCount).c_str(), &value
+        fmt::format("##{}{}", rowTexts.name, m_propertyCount).c_str(), &value
     );
 
-    if (Self::resetColumn(name, value != resetValue))
+    if (Self::resetColumn(rowTexts.name, value != resetValue))
     {
         value = resetValue;
     }
@@ -371,10 +393,12 @@ auto PropertyTable::rowTextInput(
 // methods.
 
 auto PropertyTable::rowReadOnlyTextInput(
-    std::string const& name, std::string const& value, bool const multiline
+    PropertyTableRowTexts const& rowTexts,
+    std::string const& value,
+    bool const multiline
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -385,17 +409,19 @@ auto PropertyTable::rowReadOnlyTextInput(
     ImGuiInputTextFlags const flags{ImGuiInputTextFlags_ReadOnly};
 
     std::string local{value};
-    std::string const label{fmt::format("##{}{}", name, m_propertyCount)};
+    std::string const multilineLabel{
+        fmt::format("##{}{}", rowTexts.name, m_propertyCount)
+    };
 
     ImGuiStyle const& style{ImGui::GetStyle()};
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * style.DisabledAlpha);
     if (multiline)
     {
-        ImGui::InputTextMultiline(label.c_str(), &local, {}, flags);
+        ImGui::InputTextMultiline(multilineLabel.c_str(), &local, {}, flags);
     }
     else
     {
-        ImGui::InputText(label.c_str(), &local, flags);
+        ImGui::InputText(multilineLabel.c_str(), &local, flags);
     }
     ImGui::PopStyleVar();
 
@@ -405,10 +431,10 @@ auto PropertyTable::rowReadOnlyTextInput(
 }
 
 auto PropertyTable::rowTextLabel(
-    std::string const& name, std::string const& value
+    PropertyTableRowTexts const& rowTexts, std::string const& value
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -425,13 +451,13 @@ auto PropertyTable::rowTextLabel(
 // NOLINTEND(bugprone-easily-swappable-parameters)
 
 auto PropertyTable::rowInteger(
-    std::string const& name,
+    PropertyTableRowTexts const& rowTexts,
     int32_t& value,
     int32_t const& resetValue,
     PropertySliderBehavior const behavior
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -440,7 +466,7 @@ auto PropertyTable::rowInteger(
     ImGui::PushItemWidth(ImGui::GetColumnWidth(VALUE_INDEX));
 
     ImGui::DragInt(
-        fmt::format("##{}{}", name, m_propertyCount).c_str(),
+        fmt::format("##{}{}", rowTexts.name, m_propertyCount).c_str(),
         &value,
         behavior.speed,
         std::ceil(behavior.bounds.min),
@@ -451,7 +477,7 @@ auto PropertyTable::rowInteger(
 
     ImGui::PopItemWidth();
 
-    if (Self::resetColumn(name, value != resetValue))
+    if (Self::resetColumn(rowTexts.name, value != resetValue))
     {
         value = resetValue;
     }
@@ -462,10 +488,10 @@ auto PropertyTable::rowInteger(
 }
 
 auto PropertyTable::rowReadOnlyInteger(
-    std::string const& name, int32_t const& value
+    PropertyTableRowTexts const& rowTexts, int32_t const& value
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -477,7 +503,7 @@ auto PropertyTable::rowReadOnlyInteger(
 
     int32_t valueCopy{value};
     ImGui::DragInt(
-        fmt::format("##{}{}", name, m_propertyCount).c_str(),
+        fmt::format("##{}{}", rowTexts.name, m_propertyCount).c_str(),
         &valueCopy,
         0,
         0,
@@ -496,13 +522,13 @@ auto PropertyTable::rowReadOnlyInteger(
 }
 
 auto PropertyTable::rowVec3(
-    std::string const& name,
+    PropertyTableRowTexts const& rowTexts,
     glm::vec3& value,
     glm::vec3 const& resetValue,
     PropertySliderBehavior const behavior
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -518,7 +544,8 @@ auto PropertyTable::rowVec3(
         }
 
         ImGui::DragFloat(
-            fmt::format("##{}{}{}", name, m_propertyCount, component).c_str(),
+            fmt::format("##{}{}{}", rowTexts.name, m_propertyCount, component)
+                .c_str(),
             &value[component],
             behavior.speed,
             behavior.bounds.min,
@@ -529,7 +556,7 @@ auto PropertyTable::rowVec3(
         ImGui::PopItemWidth();
     }
 
-    if (Self::resetColumn(name, value != resetValue))
+    if (Self::resetColumn(rowTexts.name, value != resetValue))
     {
         value = resetValue;
     }
@@ -540,14 +567,14 @@ auto PropertyTable::rowVec3(
 }
 
 auto PropertyTable::rowColor(
-    std::string const& name,
+    PropertyTableRowTexts const& rowTexts,
     glm::vec3& value,
     glm::vec3 const& resetValue,
     PropertySliderBehavior behavior,
     size_t const digits
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -602,7 +629,8 @@ auto PropertyTable::rowColor(
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, fieldActive);
 
         ImGui::DragFloat(
-            fmt::format("##{}{}{}", name, m_propertyCount, component).c_str(),
+            fmt::format("##{}{}{}", rowTexts.name, m_propertyCount, component)
+                .c_str(),
             &value[component],
             behavior.speed,
             behavior.bounds.min,
@@ -614,7 +642,7 @@ auto PropertyTable::rowColor(
         ImGui::PopItemWidth();
     }
 
-    if (Self::resetColumn(name, value != resetValue))
+    if (Self::resetColumn(rowTexts.name, value != resetValue))
     {
         value = resetValue;
     }
@@ -625,10 +653,10 @@ auto PropertyTable::rowColor(
 }
 
 auto PropertyTable::rowReadOnlyVec3(
-    std::string const& name, glm::vec3 const& value
+    PropertyTableRowTexts const& rowTexts, glm::vec3 const& value
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -648,7 +676,8 @@ auto PropertyTable::rowReadOnlyVec3(
 
         float componentValue{value[component]};
         ImGui::DragFloat(
-            fmt::format("##{}{}{}", name, m_propertyCount, component).c_str(),
+            fmt::format("##{}{}{}", rowTexts.name, m_propertyCount, component)
+                .c_str(),
             &componentValue,
             0.0F,
             0.0F,
@@ -666,13 +695,13 @@ auto PropertyTable::rowReadOnlyVec3(
 }
 
 auto PropertyTable::rowFloat(
-    std::string const& name,
+    PropertyTableRowTexts const& rowTexts,
     float& value,
     float const& resetValue,
     PropertySliderBehavior const behavior
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -680,7 +709,7 @@ auto PropertyTable::rowFloat(
     ImGui::TableSetColumnIndex(VALUE_INDEX);
     ImGui::PushItemWidth(ImGui::GetColumnWidth(VALUE_INDEX));
     ImGui::DragFloat(
-        fmt::format("##{}", name).c_str(),
+        fmt::format("##{}", rowTexts.name).c_str(),
         &value,
         behavior.speed,
         behavior.bounds.min,
@@ -690,7 +719,7 @@ auto PropertyTable::rowFloat(
     );
     ImGui::PopItemWidth();
 
-    if (Self::resetColumn(name, value != resetValue))
+    if (Self::resetColumn(rowTexts.name, value != resetValue))
     {
         value = resetValue;
     }
@@ -701,10 +730,10 @@ auto PropertyTable::rowFloat(
 }
 
 auto PropertyTable::rowReadOnlyFloat(
-    std::string const& name, float const& value
+    PropertyTableRowTexts const& rowTexts, float const& value
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -716,7 +745,7 @@ auto PropertyTable::rowReadOnlyFloat(
 
     float valueCopy{value};
     ImGui::DragFloat(
-        fmt::format("##{}", name).c_str(),
+        fmt::format("##{}", rowTexts.name).c_str(),
         &valueCopy,
         0.0,
         0.0,
@@ -735,18 +764,18 @@ auto PropertyTable::rowReadOnlyFloat(
 }
 
 auto PropertyTable::rowBoolean(
-    std::string const& name, bool& value, bool const& resetValue
+    PropertyTableRowTexts const& rowTexts, bool& value, bool const& resetValue
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
 
     ImGui::TableSetColumnIndex(VALUE_INDEX);
-    ImGui::Checkbox(fmt::format("##{}", name).c_str(), &value);
+    ImGui::Checkbox(fmt::format("##{}", rowTexts.name).c_str(), &value);
 
-    if (Self::resetColumn(name, value != resetValue))
+    if (Self::resetColumn(rowTexts.name, value != resetValue))
     {
         value = resetValue;
     }
@@ -757,10 +786,10 @@ auto PropertyTable::rowBoolean(
 }
 
 auto PropertyTable::rowReadOnlyBoolean(
-    std::string const& name, bool const& value
+    PropertyTableRowTexts const& rowTexts, bool const& value
 ) -> PropertyTable&
 {
-    if (!Self::rowBegin(name))
+    if (!Self::rowBegin(rowTexts))
     {
         return *this;
     }
@@ -770,7 +799,7 @@ auto PropertyTable::rowReadOnlyBoolean(
     ImGui::BeginDisabled();
 
     bool valueCopy{value};
-    ImGui::Checkbox(fmt::format("##{}", name).c_str(), &valueCopy);
+    ImGui::Checkbox(fmt::format("##{}", rowTexts.name).c_str(), &valueCopy);
 
     ImGui::EndDisabled();
 
@@ -813,20 +842,23 @@ void PropertyTable::demoWindow(bool& open)
     // Since this is demo code, values here are arbitrary, so we do not lint
     // NOLINTBEGIN(readability-magic-numbers)
     PropertyTable::begin("Demo Table")
-        .rowChildPropertyBegin("Available Fields")
-        .rowDropdown("Dropdown", dropdownIndex, 0, dropdownLabels)
-        .rowTextInput("Text", valueText, "Default Text Value")
+        .rowChildPropertyBegin({.name = "Available Fields"})
+        .rowDropdown({.name = "Dropdown"}, dropdownIndex, 0, dropdownLabels)
+        .rowTextInput({.name = "Text"}, valueText, "Default Text Value")
         .childPropertyBegin()
-        .rowReadOnlyInteger("Text Size", static_cast<int32_t>(valueText.size()))
         .rowReadOnlyInteger(
-            "Text Capacity", static_cast<int32_t>(valueText.capacity())
+            {.name = "Text Size"}, static_cast<int32_t>(valueText.size())
+        )
+        .rowReadOnlyInteger(
+            {.name = "Text Capacity"},
+            static_cast<int32_t>(valueText.capacity())
         )
         .childPropertyEnd()
-        .rowTextLabel("Read-Only Text", "Hello!")
-        .rowBoolean("Boolean", valueBoolean, false)
-        .rowReadOnlyBoolean("Read-Only Boolean", true)
+        .rowTextLabel({.name = "Read-Only Text"}, "Hello!")
+        .rowBoolean({.name = "Boolean"}, valueBoolean, false)
+        .rowReadOnlyBoolean({.name = "Read-Only Boolean"}, true)
         .rowFloat(
-            "Bounds Minimum",
+            {.name = "Bounds Minimum"},
             minimumBound,
             -1.0F,
             PropertySliderBehavior{
@@ -834,7 +866,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowFloat(
-            "Bounds Maximum",
+            {.name = "Bounds Maximum"},
             maximumBound,
             1.0F,
             PropertySliderBehavior{
@@ -842,7 +874,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowInteger(
-            "Bounded Integer",
+            {.name = "Bounded Integer"},
             valueBoundedInteger,
             0,
             PropertySliderBehavior{
@@ -850,7 +882,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowFloat(
-            "Bounded Float",
+            {.name = "Bounded Float"},
             valueBoundedFloat,
             0.0F,
             PropertySliderBehavior{
@@ -858,7 +890,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowVec3(
-            "Bounded Vec3",
+            {.name = "Bounded Vec3"},
             valueBoundedVec3,
             glm::vec3{0.0F},
             PropertySliderBehavior{
@@ -866,7 +898,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowInteger(
-            "Unbounded Integer",
+            {.name = "Unbounded Integer"},
             valueUnboundedInteger,
             0,
             PropertySliderBehavior{
@@ -874,7 +906,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowFloat(
-            "Unbounded Float",
+            {.name = "Unbounded Float"},
             valueUnboundedFloat,
             0.0F,
             PropertySliderBehavior{
@@ -882,7 +914,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowVec3(
-            "Unbounded Vec3",
+            {.name = "Unbounded Vec3"},
             valueUnboundedVec3,
             glm::vec3{0.0F},
             PropertySliderBehavior{
@@ -890,33 +922,33 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .rowColor(
-            "Vec3 with RGB Labels",
+            {.name = "Vec3 with RGB Labels"},
             valueUnboundedVec3,
             glm::vec3{0.0F},
             PropertySliderBehavior{
                 .speed = 0.1F,
             }
         )
-        .rowReadOnlyFloat("Read Only Float", 1.0F)
-        .rowReadOnlyVec3("Read-Only Vec3", glm::vec3{1.0F})
-        .rowReadOnlyInteger("Read-Only Integer", 592181)
+        .rowReadOnlyFloat({.name = "Read Only Float"}, 1.0F)
+        .rowReadOnlyVec3({.name = "Read-Only Vec3"}, glm::vec3{1.0F})
+        .rowReadOnlyInteger({.name = "Read-Only Integer"}, 592181)
         .childPropertyEnd() // Available Fields
         .rowTextLabel(
-            "Child Properties",
+            {.name = "Child Properties"},
             "Child Properties remember their collapse status."
         )
         .childPropertyBegin()
-        .rowChildPropertyBegin("Child")
-        .rowChildPropertyBegin("Child")
-        .rowTextLabel("Hello", "")
+        .rowChildPropertyBegin({.name = "Child"})
+        .rowChildPropertyBegin({.name = "Child"})
+        .rowTextLabel({.name = "Hello"}, "")
         .childPropertyEnd()
-        .rowChildPropertyBegin("Child")
-        .rowTextLabel("Hello", "")
+        .rowChildPropertyBegin({.name = "Child"})
+        .rowTextLabel({.name = "Hello"}, "")
         .childPropertyEnd()
         .childPropertyEnd()
         .childPropertyEnd()
         .rowFloat(
-            "Unbounded Float with Children",
+            {.name = "Unbounded Float with Children"},
             valueUnboundedFloat3,
             0.0F,
             PropertySliderBehavior{
@@ -924,7 +956,7 @@ void PropertyTable::demoWindow(bool& open)
             }
         )
         .childPropertyBegin()
-        .rowTextLabel("Some Child Property", "")
+        .rowTextLabel({.name = "Some Child Property"}, "")
         .childPropertyEnd()
         .end();
     // NOLINTEND(readability-magic-numbers)
