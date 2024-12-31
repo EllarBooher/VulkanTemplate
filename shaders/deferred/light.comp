@@ -12,6 +12,8 @@ layout(set = 1, binding = 4) uniform sampler2D gbuffer_OcclusionRoughnessMetalli
 
 layout(r16, set = 2, binding = 0) uniform image2D inputAO;
 
+layout(set = 3, binding = 0) uniform sampler2D shadowmap;
+
 struct GBufferTexel
 {
     vec4 position;
@@ -113,8 +115,15 @@ layout(push_constant) uniform PushConstant
     float lightStrength;
     float ambientStrength;
 
-    vec3 padding0;
+    vec2 padding0;
+    float shadowReceiverPlaneDepthBias;
     bool gbufferWhiteOverride;
+
+    mat4 lightProjView;
+
+    uvec2 shadowMapSize;
+    float shadowReceiverConstantBias;
+    bool enableShadows;
 } pc;
 
 layout(constant_id = 0) const bool enableAO = false;
@@ -135,6 +144,42 @@ vec3 computeLightContribution(const vec3 lightForward, const PBRTexel material, 
     return pc.lightStrength * material.occlusion * mix(diffuseContribution, specularContribution, fresnel)
          * clamp(dot(material.normal, lightDirection), 0.0, 1.0);
 }
+
+// clang-format off
+const mat4 TO_TEX_COORD_MAT = mat4(
+	0.5, 0.0, 0.0, 0.0,
+	0.0, 0.5, 0.0, 0.0,
+	0.0, 0.0, 1.0, 0.0,
+	0.5, 0.5, 0.0, 1.0
+);
+// clang-format on
+
+float sampleShadowMap(sampler2D map, const mat4 lightProjView, const vec3 lightIncident, const vec3 position, const vec3 normal)
+{
+    if(!pc.enableShadows)
+    {
+        return 1.0;
+    }
+
+    // Scale the bias by the size of a texel in shadow space
+    // coords run from (-1,-1) to (1,1) so we multiply by 2
+    const float texelSize = 2.0 / pc.shadowMapSize.x;
+    const float bias = clamp(1.0 - dot(-lightIncident, normal), 0.0, 1.0) * texelSize * pc.shadowReceiverPlaneDepthBias;
+
+    const vec4 shadowCoord = TO_TEX_COORD_MAT * lightProjView * vec4(position + bias * normal, 1.0);
+
+    float receiverDepth = shadowCoord.z;
+    const float occluderDepth = texture(map, shadowCoord.xy).r;
+
+    // Reverse-Z
+    if (occluderDepth > 0.0 && occluderDepth > receiverDepth + pc.shadowReceiverConstantBias)
+    {
+        return 0.0;
+    }
+
+    return 1.0;
+}
+
 
 void main()
 {
@@ -169,7 +214,15 @@ void main()
 
     // Slightly offset light
     const vec3 lightForward = normalize(pc.lightForward.xyz);
-    const vec3 lightContribution = computeLightContribution(lightForward, material, viewDirection);
+    const float shadowTransmittance = sampleShadowMap(
+        shadowmap, 
+        pc.lightProjView, 
+        pc.lightForward.xyz, 
+        material.position.xyz, 
+        material.normal.xyz
+    );
+
+    const vec3 lightContribution = shadowTransmittance * computeLightContribution(lightForward, material, viewDirection);
 
     float aoTransmittance = 1.0;
     if (enableAO)

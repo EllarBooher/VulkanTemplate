@@ -21,6 +21,16 @@ namespace vkt
 {
 struct LightingPassParameters
 {
+
+    glm::vec3 lightAxisAngles;
+    float lightStrength;
+    float ambientStrength;
+
+    // When sampling gbuffer for albedo/specular, read as pure white vec4(1.0)
+    bool gbufferWhiteOverride;
+
+    // begin ambient occlusion settings
+
     bool enableAOFromFrontFace;
     bool enableAOFromBackFace;
     bool enableRandomNormalSampling;
@@ -31,21 +41,40 @@ struct LightingPassParameters
     // correct
     bool normalizeRandomNormals;
 
-    glm::vec3 lightAxisAngles;
-    float lightStrength;
-    float ambientStrength;
-
     float occluderRadius;
     float occluderBias;
     float aoScale;
 
     bool copyAOToOutputTexture;
-
-    // When sampling gbuffer for albedo/specular, read as pure white vec4(1.0)
-    bool gbufferWhiteOverride;
-
     // Enables blurring the AO texture before using it for lighting
     bool blurAOTexture;
+
+    // end ambient occlusion settings
+
+    // begin shadow settings
+
+    bool enableShadows;
+
+    // Offset shadow reciever position by the normal, scaled by this factor
+    float shadowReceiverPlaneDepthBias;
+    // Subtract a constant bias from shadow receiver depth
+    float shadowReceiverConstantBias;
+
+    // Utilized for Vulkan fixed function depth computations
+    float depthBiasConstant;
+    float depthBiasSlope;
+
+    float shadowNearPlane;
+    float shadowFarPlane;
+
+    // end shadow settings
+};
+
+struct ShadowmappingPassResources
+{
+    // Offscreen pass utilizing a vertex shader to collect depth values
+    VkShaderEXT vertexShader{VK_NULL_HANDLE};
+    VkPipelineLayout vertexShaderLayout{VK_NULL_HANDLE};
 };
 
 // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
@@ -65,6 +94,14 @@ struct LightingPassResources
     VkDescriptorSetLayout renderTargetLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout gbufferLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout inputAOLayout{VK_NULL_HANDLE};
+
+    // A single combined sampler shadowmap, for the single global directional
+    // light we utilize
+    // see 'deferred/ligh.comp' for usage
+    VkSampler shadowMapSampler{VK_NULL_HANDLE};
+    VkDescriptorSetLayout shadowMapSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSet shadowMapSet{VK_NULL_HANDLE};
+    std::unique_ptr<ImageView> shadowMap{};
 
     std::unordered_map<size_t, VkShaderEXT> shaderBySpecializationHash{};
     VkPipelineLayout shaderLayout{VK_NULL_HANDLE};
@@ -162,6 +199,7 @@ private:
     static LightingPassParameters DEFAULT_PARAMETERS;
     LightingPassParameters m_parameters{DEFAULT_PARAMETERS};
 
+    ShadowmappingPassResources m_shadowmappingPassResources{};
     LightingPassResources m_lightingPassResources{};
     SSAOPassResources m_ssaoPassResources{};
     GaussianBlurPassResources m_gaussianBlurPassResources{};

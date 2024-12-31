@@ -14,14 +14,17 @@
 #include "vulkan_template/vulkan/Shader.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanOverloads.hpp"
+#include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <cassert>
 #include <filesystem>
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/random.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <glm/gtx/transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
@@ -32,6 +35,17 @@
 
 namespace
 {
+struct ShadowMapPushConstant
+{
+    VkDeviceAddress vertexBuffer;
+    VkDeviceAddress modelBuffer;
+
+    glm::mat4x4 cameraProjView;
+};
+static_assert(std::is_standard_layout_v<ShadowMapPushConstant>);
+// NOLINTNEXTLINE(readability-magic-numbers)
+static_assert(sizeof(ShadowMapPushConstant) == 80ULL);
+
 struct LightingPassPushConstant
 {
     glm::vec2 offset;
@@ -47,11 +61,18 @@ struct LightingPassPushConstant
     float lightStrength;
     float ambientStrength;
 
-    glm::vec3 padding0;
+    glm::vec2 padding0;
+    float shadowReceiverPlaneDepthBias;
     uint32_t gbufferWhiteOverride;
+
+    glm::mat4x4 lightProjView;
+
+    glm::uvec2 shadowMapSize;
+    float shadowReceiverConstantBias;
+    uint32_t enableShadows;
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
-static_assert(sizeof(LightingPassPushConstant) == 144ULL);
+static_assert(sizeof(LightingPassPushConstant) == 224ULL);
 
 struct LightingPassSpecializationConstant
 {
@@ -111,6 +132,46 @@ template <> struct std::hash<::SSAOPassSpecializationConstant>
 
 namespace
 {
+auto computeLightProjView(
+    vkt::LightingPassParameters const& parameters, bool const reverseZ
+)
+{
+    auto const X{glm::angleAxis(
+        parameters.lightAxisAngles.x, glm::vec3{1.0F, 0.0F, 0.0F}
+    )};
+    auto const Y{glm::angleAxis(
+        parameters.lightAxisAngles.y, glm::vec3{0.0F, 1.0F, 0.0F}
+    )};
+    auto const Z{glm::angleAxis(
+        parameters.lightAxisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F}
+    )};
+    glm::quat const lightOrientation{Z * X * Y};
+    glm::vec3 const lightForward{
+        glm::toMat4(Z * X * Y) * glm::vec4(0.0, 0.0, 1.0, 0.0)
+    };
+
+    float near{parameters.shadowNearPlane};
+    float far{parameters.shadowFarPlane};
+    if (reverseZ)
+    {
+        std::swap(near, far);
+    }
+
+    // TODO: compute light projection matrix based on camera frustrum/scene size
+
+    glm::vec3 const min{-4.0F, -4.0F, near};
+    glm::vec3 const max{4.0F, 4.0F, far};
+
+    glm::mat4x4 const projection{
+        glm::orthoLH_ZO(min.x, max.x, min.y, max.y, min.z, max.z)
+    };
+    glm::mat4x4 const view{glm::inverse(
+        glm::translate(-5.0F * lightForward) * glm::toMat4(lightOrientation)
+    )};
+
+    return projection * view;
+}
+
 auto allocateRandomNormalsLayout(VkDevice const device)
     -> std::optional<VkDescriptorSetLayout>
 {
@@ -298,8 +359,79 @@ auto fillInputOutputComputeDescriptor(
     return setResult;
 }
 
-auto createLightingPassResources(VkDevice const device)
-    -> std::optional<vkt::LightingPassResources>
+auto createShadowmappingPassResources(VkDevice const device)
+    -> std::optional<vkt::ShadowmappingPassResources>
+{
+    std::optional<vkt::ShadowmappingPassResources> resourcesResult{
+        std::in_place, vkt::ShadowmappingPassResources{}
+    };
+    vkt::ShadowmappingPassResources& resources{resourcesResult.value()};
+
+    char const* const OFFSCREEN_VERTEX_SHADER_PATH{
+        "shaders/shadowmapping/offscreen.vert.spv"
+    };
+
+    { // shader
+        std::vector<VkDescriptorSetLayout> const layouts{};
+        std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .offset = 0,
+            .size = sizeof(ShadowMapPushConstant),
+        }};
+
+        std::optional<VkShaderEXT> const shaderResult{vkt::loadShaderObject(
+            device,
+            OFFSCREEN_VERTEX_SHADER_PATH,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            (VkShaderStageFlagBits)0,
+            layouts,
+            ranges,
+            VkSpecializationInfo{}
+        )};
+        if (!shaderResult.has_value())
+        {
+            VKT_ERROR("Failed to compile shadowmap shader.");
+            return std::nullopt;
+        }
+        resources.vertexShader = shaderResult.value();
+
+        VkPipelineLayoutCreateInfo const layoutCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .pNext = nullptr,
+
+            .flags = 0,
+
+            .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+            .pSetLayouts = layouts.data(),
+
+            .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+            .pPushConstantRanges = ranges.data(),
+        };
+
+        if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
+                device,
+                &layoutCreateInfo,
+                nullptr,
+                &resources.vertexShaderLayout
+            )};
+            pipelineLayoutResult != VK_SUCCESS)
+        {
+            VKT_LOG_VK(
+                pipelineLayoutResult,
+                "Failed to create shadowmap pipeline layout."
+            );
+            return std::nullopt;
+        }
+    }
+
+    return resourcesResult;
+}
+
+auto createLightingPassResources(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    vkt::DescriptorAllocator& descriptorAllocator
+) -> std::optional<vkt::LightingPassResources>
 {
     std::optional<vkt::LightingPassResources> resourcesResult{
         std::in_place, vkt::LightingPassResources{}
@@ -334,10 +466,98 @@ auto createLightingPassResources(VkDevice const device)
     }
     resources.inputAOLayout = randomNormalsLayoutResult.value();
 
+    { // combined sampler
+        VkExtent2D constexpr SHADOWMAP_EXTENT{8192U, 8192U};
+
+        VkSamplerCreateInfo const samplerInfo{vkt::samplerCreateInfo(
+            0,
+            VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+            VK_FILTER_NEAREST,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+        )};
+
+        VkResult const samplerResult{vkCreateSampler(
+            device, &samplerInfo, nullptr, &resources.shadowMapSampler
+        )};
+
+        if (samplerResult != VK_SUCCESS)
+        {
+            VKT_LOG_VK(samplerResult, "Creating Shadow Pass Sampler");
+            return std::nullopt;
+        }
+
+        std::optional<VkDescriptorSetLayout> buildResult{
+            vkt::DescriptorLayoutBuilder{}
+                .pushBinding(vkt::DescriptorLayoutBuilder::BindingParams{
+                    .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    .stageMask = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .bindingFlags = 0,
+                })
+                .build(device, 0)
+        };
+        if (!buildResult.has_value())
+        {
+            VKT_ERROR("Unable to build shadowmap sampler descriptor layout.");
+            return std::nullopt;
+        }
+        resources.shadowMapSetLayout = buildResult.value();
+        resources.shadowMapSet =
+            descriptorAllocator.allocate(device, resources.shadowMapSetLayout);
+
+        std::optional<vkt::ImageView> shadowmapResult{vkt::ImageView::allocate(
+            device,
+            allocator,
+            vkt::ImageAllocationParameters{
+                .extent = SHADOWMAP_EXTENT,
+                .format = VK_FORMAT_D32_SFLOAT,
+                .usageFlags = VK_IMAGE_USAGE_SAMPLED_BIT
+                            | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                            | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            },
+            vkt::ImageViewAllocationParameters{
+                .subresourceRange =
+                    vkt::imageSubresourceRange(VK_IMAGE_ASPECT_DEPTH_BIT),
+            }
+        )};
+        if (!shadowmapResult.has_value())
+        {
+            VKT_ERROR("Unable to allocate shadowmap texture.");
+            return {};
+        }
+        resources.shadowMap =
+            std::make_unique<vkt::ImageView>(std::move(shadowmapResult).value()
+            );
+
+        VkDescriptorImageInfo const combinedSamplerInfo{
+            .sampler = resources.shadowMapSampler,
+            .imageView = resources.shadowMap->view(),
+            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+        };
+
+        VkWriteDescriptorSet const writeInfo{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = nullptr,
+
+            .dstSet = resources.shadowMapSet,
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+
+            .pImageInfo = &combinedSamplerInfo,
+            .pBufferInfo = nullptr,
+            .pTexelBufferView = nullptr,
+        };
+
+        std::vector<VkWriteDescriptorSet> const writes{writeInfo};
+        vkUpdateDescriptorSets(device, VKR_ARRAY(writes), VKR_ARRAY_NONE);
+    }
+
     std::vector<VkDescriptorSetLayout> const layouts{
         resources.renderTargetLayout,
         resources.gbufferLayout,
-        resources.inputAOLayout
+        resources.inputAOLayout,
+        resources.shadowMapSetLayout
     };
     std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -820,6 +1040,9 @@ void cleanResources(
     vkDestroyDescriptorSetLayout(device, resources.gbufferLayout, nullptr);
     vkDestroyDescriptorSetLayout(device, resources.inputAOLayout, nullptr);
 
+    vkDestroySampler(device, resources.shadowMapSampler, nullptr);
+    vkDestroyDescriptorSetLayout(device, resources.shadowMapSetLayout, nullptr);
+
     for (auto const& [hash, shader] : resources.shaderBySpecializationHash)
     {
         vkDestroyShaderEXT(device, shader, nullptr);
@@ -866,6 +1089,14 @@ void cleanResources(
     vkDestroyPipelineLayout(device, resources.blurLayout, nullptr);
 }
 
+void cleanResources(
+    VkDevice const device, vkt::ShadowmappingPassResources& resources
+)
+{
+    vkDestroyShaderEXT(device, resources.vertexShader, nullptr);
+    vkDestroyPipelineLayout(device, resources.vertexShaderLayout, nullptr);
+}
+
 } // namespace
 
 namespace vkt
@@ -875,18 +1106,29 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .enableAOFromFrontFace = true,
     .enableAOFromBackFace = true,
     .enableRandomNormalSampling = true,
-    .normalizeRandomNormals = true,
+    .normalizeRandomNormals = false,
 
     .lightAxisAngles = glm::vec3{0.0F, 1.3F, 0.8F},
-    .lightStrength = 0.0F,
-    .ambientStrength = 1.0F,
+    .lightStrength = 10.0F,
+    .ambientStrength = 0.1F,
 
     .occluderRadius = 1.0F,
-    .occluderBias = 0.15F,
-    .aoScale = 0.02F,
+    .occluderBias = 0.05F,
+    .aoScale = 0.03F,
     .gbufferWhiteOverride = true,
 
     .blurAOTexture = true,
+
+    .shadowReceiverPlaneDepthBias = 4.0F,
+    .shadowReceiverConstantBias = 0.001F,
+
+    .depthBiasConstant = 0.0F,
+    .depthBiasSlope = 0.0F,
+
+    .shadowNearPlane = 0.0F,
+    .shadowFarPlane = 10.0F,
+
+    .enableShadows = true,
 };
 // NOLINTEND(readability-magic-numbers)
 
@@ -895,6 +1137,8 @@ auto LightingPass::operator=(LightingPass&& other) -> LightingPass&
     m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
     m_descriptorAllocator = std::exchange(other.m_descriptorAllocator, nullptr);
 
+    m_shadowmappingPassResources =
+        std::exchange(other.m_shadowmappingPassResources, {});
     m_lightingPassResources = std::exchange(other.m_lightingPassResources, {});
     m_ssaoPassResources = std::exchange(other.m_ssaoPassResources, {});
     m_gaussianBlurPassResources =
@@ -913,6 +1157,7 @@ LightingPass::~LightingPass()
         return;
     }
 
+    ::cleanResources(m_device, m_shadowmappingPassResources);
     ::cleanResources(m_device, m_lightingPassResources);
     ::cleanResources(m_device, m_ssaoPassResources);
     ::cleanResources(m_device, m_gaussianBlurPassResources);
@@ -948,9 +1193,20 @@ auto LightingPass::create(
         std::move(descriptorAllocatorResult)
     );
 
-    auto lightingPassResourcesResult{
-        ::createLightingPassResources(lightingPass.m_device)
+    auto shadowmappingPassResourcesResult{
+        ::createShadowmappingPassResources(lightingPass.m_device)
     };
+    if (!shadowmappingPassResourcesResult.has_value())
+    {
+        VKT_ERROR("Failed to create shadowmapping pass resources.");
+        return std::nullopt;
+    }
+    lightingPass.m_shadowmappingPassResources =
+        std::move(shadowmappingPassResourcesResult).value();
+
+    auto lightingPassResourcesResult{::createLightingPassResources(
+        lightingPass.m_device, allocator, *lightingPass.m_descriptorAllocator
+    )};
     if (!lightingPassResourcesResult.has_value())
     {
         VKT_ERROR("Failed to create lighting pass resources.");
@@ -993,6 +1249,183 @@ auto LightingPass::create(
 
 namespace
 {
+
+// Set all the dynamic state required when using graphics shader objects
+void setRasterizationState(
+    VkCommandBuffer const cmd,
+    bool const reverseZ,
+    VkRect2D const drawRect,
+    size_t const colorAttachmentCount,
+    bool const backface,
+    vkt::LightingPassParameters const& parameters
+)
+{
+    VkViewport const viewport{
+        .x = static_cast<float>(drawRect.offset.x),
+        .y = static_cast<float>(drawRect.offset.y),
+        .width = static_cast<float>(drawRect.extent.width),
+        .height = static_cast<float>(drawRect.extent.height),
+        .minDepth = 0.0F,
+        .maxDepth = 1.0F,
+    };
+
+    vkCmdSetViewportWithCount(cmd, 1, &viewport);
+
+    VkRect2D const scissor{drawRect};
+
+    vkCmdSetScissorWithCount(cmd, 1, &scissor);
+
+    vkCmdSetRasterizerDiscardEnable(cmd, VK_FALSE);
+
+    VkColorBlendEquationEXT const colorBlendEquation{};
+    vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &colorBlendEquation);
+
+    // No vertex input state since we use buffer addresses
+
+    vkCmdSetCullModeEXT(
+        cmd, backface ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT
+    );
+
+    vkCmdSetPrimitiveTopology(cmd, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    vkCmdSetPrimitiveRestartEnable(cmd, VK_FALSE);
+    vkCmdSetRasterizationSamplesEXT(cmd, VK_SAMPLE_COUNT_1_BIT);
+
+    VkSampleMask const sampleMask{0b1};
+    vkCmdSetSampleMaskEXT(cmd, VK_SAMPLE_COUNT_1_BIT, &sampleMask);
+
+    vkCmdSetAlphaToCoverageEnableEXT(cmd, VK_FALSE);
+
+    vkCmdSetPolygonModeEXT(cmd, VK_POLYGON_MODE_FILL);
+
+    vkCmdSetFrontFace(cmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+
+    vkCmdSetDepthWriteEnable(cmd, VK_TRUE);
+
+    vkCmdSetDepthTestEnable(cmd, VK_TRUE);
+    vkCmdSetDepthCompareOpEXT(
+        cmd, reverseZ ? VK_COMPARE_OP_GREATER : VK_COMPARE_OP_LESS
+    );
+
+    vkCmdSetDepthBoundsTestEnable(cmd, VK_FALSE);
+    vkCmdSetDepthBiasEnableEXT(cmd, VK_TRUE);
+    VkDepthBiasInfoEXT const depthBias{
+        .sType = VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT,
+        .depthBiasConstantFactor = parameters.depthBiasConstant,
+        .depthBiasSlopeFactor = parameters.depthBiasSlope,
+    };
+    vkCmdSetDepthBias2EXT(cmd, &depthBias);
+
+    vkCmdSetStencilTestEnable(cmd, VK_FALSE);
+
+    if (colorAttachmentCount > 0)
+    {
+        VkColorComponentFlags const colorComponentFlags{
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+            | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+        };
+        VkBool32 const colorBlendEnabled{VK_FALSE};
+        std::vector<VkColorComponentFlags> attachmentWriteMasks{};
+        std::vector<VkBool32> attachmentBlendEnabled{};
+
+        for (size_t i{0}; i < colorAttachmentCount; i++)
+        {
+            attachmentWriteMasks.push_back(colorComponentFlags);
+            attachmentBlendEnabled.push_back(colorBlendEnabled);
+        }
+
+        vkCmdSetColorWriteMaskEXT(cmd, 0, VKR_ARRAY(attachmentWriteMasks));
+        vkCmdSetColorBlendEnableEXT(cmd, 0, VKR_ARRAY(attachmentBlendEnabled));
+    }
+}
+
+void recordDrawShadowmap(
+    VkCommandBuffer const cmd,
+    vkt::ShadowmappingPassResources& resources,
+    vkt::ImageView& shadowMap,
+    vkt::LightingPassParameters const& parameters,
+    vkt::Scene const& scene
+)
+{
+    shadowMap.recordTransitionBarriered(
+        cmd, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL
+    );
+
+    bool constexpr REVERSE_Z{true};
+    VkRect2D const drawRect{
+        .offset = VkOffset2D{0, 0}, .extent = shadowMap.image().extent2D()
+    };
+
+    setRasterizationState(cmd, REVERSE_Z, drawRect, 0, false, parameters);
+
+    VkRenderingAttachmentInfo const depthAttachment{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .pNext = nullptr,
+
+        .imageView = shadowMap.view(),
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+
+        .resolveMode = VK_RESOLVE_MODE_NONE,
+        .resolveImageView = VK_NULL_HANDLE,
+        .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+
+        .clearValue =
+            VkClearValue{.depthStencil{.depth = REVERSE_Z ? 0.0F : 1.0F}},
+    };
+
+    VkExtent2D const depthExtent{shadowMap.image().extent2D()};
+
+    VkRenderingInfo const renderInfo{vkt::renderingInfo(
+        VkRect2D{.extent = depthExtent}, {}, &depthAttachment
+    )};
+
+    vkCmdBeginRendering(cmd, &renderInfo);
+
+    VkShaderStageFlagBits constexpr VERTEX_STAGE{VK_SHADER_STAGE_VERTEX_BIT};
+    vkCmdBindShadersEXT(cmd, 1, &VERTEX_STAGE, &resources.vertexShader);
+
+    {
+        vkt::MeshBuffers& meshBuffers{*scene.mesh().meshBuffers};
+        vkt::InstanceRenderingInfo const sceneRenderInfo{
+            scene.instanceRenderingInfo()
+        };
+
+        ShadowMapPushConstant const vertexPushConstant{
+            .vertexBuffer = meshBuffers.vertexAddress(),
+            .modelBuffer = sceneRenderInfo.models,
+            .cameraProjView = computeLightProjView(parameters, REVERSE_Z),
+        };
+        vkCmdPushConstants(
+            cmd,
+            resources.vertexShaderLayout,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            sizeof(ShadowMapPushConstant),
+            &vertexPushConstant
+        );
+
+        vkCmdBindIndexBuffer(
+            cmd, meshBuffers.indexBuffer(), 0, VK_INDEX_TYPE_UINT32
+        );
+
+        VkDeviceSize const instanceCount{sceneRenderInfo.instanceCount};
+        for (auto const& surface : scene.mesh().surfaces)
+        {
+            vkCmdDrawIndexed(
+                cmd, surface.indexCount, instanceCount, surface.firstIndex, 0, 0
+            );
+        }
+    }
+
+    VkShaderStageFlagBits const unboundStages{VK_SHADER_STAGE_VERTEX_BIT};
+    VkShaderEXT const unboundHandles{VK_NULL_HANDLE};
+    vkCmdBindShadersEXT(cmd, 1, &unboundStages, &unboundHandles);
+
+    vkCmdEndRendering(cmd);
+}
+
 void recordDrawSSAO(
     VkCommandBuffer const cmd,
     vkt::GBuffer const& occludee,
@@ -1196,7 +1629,8 @@ void recordDrawLighting(
     std::vector<VkDescriptorSet> descriptors{
         outputTexture.singletonDescriptor(),
         gbuffer.descriptor(),
-        ambientOcclusion
+        ambientOcclusion,
+        resources.shadowMapSet
     };
 
     outputTexture.color().recordTransitionBarriered(
@@ -1208,6 +1642,10 @@ void recordDrawLighting(
 
     gbuffer.recordTransitionImages(
         cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+
+    resources.shadowMap->recordTransitionBarriered(
+        cmd, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL
     );
 
     bool const enableAO{
@@ -1239,9 +1677,14 @@ void recordDrawLighting(
     auto const Z{glm::angleAxis(
         parameters.lightAxisAngles.z, glm::vec3{0.0F, 0.0F, 1.0F}
     )};
-    glm::vec4 const lightForward{
+
+    // glm::quat const lightOrientation{Z * X * Y};
+    glm::vec3 const lightForward{
         glm::toMat4(Z * X * Y) * glm::vec4(0.0, 0.0, 1.0, 0.0)
     };
+
+    bool constexpr REVERSE_Z{true};
+    VkExtent2D const shadowMapSize{resources.shadowMap->image().extent2D()};
 
     LightingPassPushConstant const pc{
         .offset =
@@ -1255,7 +1698,7 @@ void recordDrawLighting(
                 static_cast<float>(gBufferCapacity.height)
             },
         .cameraPosition = glm::vec4{scene.camera().position, 1.0F},
-        .lightForward = lightForward,
+        .lightForward = glm::vec4{lightForward, 0.0},
         .cameraProjView = scene.cameraProjView(aspectRatio),
         .extent =
             glm::vec2{
@@ -1264,8 +1707,13 @@ void recordDrawLighting(
             },
         .lightStrength = parameters.lightStrength,
         .ambientStrength = parameters.ambientStrength,
+        .shadowReceiverConstantBias = parameters.shadowReceiverConstantBias,
         .gbufferWhiteOverride =
-            parameters.gbufferWhiteOverride ? VK_TRUE : VK_FALSE
+            parameters.gbufferWhiteOverride ? VK_TRUE : VK_FALSE,
+        .lightProjView = computeLightProjView(parameters, REVERSE_Z),
+        .shadowMapSize = glm::uvec2{shadowMapSize.width, shadowMapSize.height},
+        .shadowReceiverPlaneDepthBias = parameters.shadowReceiverPlaneDepthBias,
+        .enableShadows = parameters.enableShadows ? VK_TRUE : VK_FALSE,
     };
 
     vkCmdPushConstants(
@@ -1339,6 +1787,14 @@ void LightingPass::recordDraw(
             ? m_gaussianBlurPassResources.fullyBlurredImageSet
             : m_ssaoPassResources.ambientOcclusionSet
     };
+
+    recordDrawShadowmap(
+        cmd,
+        m_shadowmappingPassResources,
+        *m_lightingPassResources.shadowMap,
+        m_parameters,
+        scene
+    );
 
     if (m_parameters.copyAOToOutputTexture)
     {
@@ -1494,6 +1950,72 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             "Override Albedo/Specular as White",
             m_parameters.gbufferWhiteOverride,
             DEFAULT_PARAMETERS.gbufferWhiteOverride
+        );
+
+        PropertySliderBehavior constexpr DEPTH_BIAS_BEHAVIOR{
+            .speed = 0.01F,
+        };
+        table.rowFloat(
+            "Depth Bias Constant Factor",
+            m_parameters.depthBiasConstant,
+            DEFAULT_PARAMETERS.depthBiasConstant,
+            DEPTH_BIAS_BEHAVIOR
+        );
+        table.rowFloat(
+            "Depth Bias Slope Factor",
+            m_parameters.depthBiasSlope,
+            DEFAULT_PARAMETERS.depthBiasSlope,
+            DEPTH_BIAS_BEHAVIOR
+        );
+
+        PropertySliderBehavior const DEPTH_NEAR_BEHAVIOR{
+            .speed = 0.01F,
+            .bounds =
+                FloatBounds{.min = 0.0F, .max = m_parameters.shadowFarPlane}
+        };
+        table.rowFloat(
+            "Light Shadow Depth Near Plane",
+            m_parameters.shadowNearPlane,
+            glm::min(
+                DEFAULT_PARAMETERS.shadowNearPlane, m_parameters.shadowFarPlane
+            ),
+            DEPTH_NEAR_BEHAVIOR
+        );
+
+        PropertySliderBehavior const DEPTH_FAR_BEHAVIOR{
+            .speed = 0.01F,
+            .bounds =
+                FloatBounds{
+                    .min = m_parameters.shadowNearPlane,
+                }
+        };
+        table.rowFloat(
+            "Light Shadow Depth Far Plane",
+            m_parameters.shadowFarPlane,
+            glm::max(
+                DEFAULT_PARAMETERS.shadowNearPlane, m_parameters.shadowNearPlane
+            ),
+            DEPTH_FAR_BEHAVIOR
+        );
+
+        table.rowBoolean(
+            "Enable Shadows",
+            m_parameters.enableShadows,
+            DEFAULT_PARAMETERS.enableShadows
+        );
+
+        table.rowFloat(
+            "Shadow Reciever Plane Depth Bias",
+            m_parameters.shadowReceiverPlaneDepthBias,
+            DEFAULT_PARAMETERS.shadowReceiverPlaneDepthBias,
+            DEPTH_BIAS_BEHAVIOR
+        );
+
+        table.rowFloat(
+            "Shadow Receiver Constant Bias",
+            m_parameters.shadowReceiverConstantBias,
+            DEFAULT_PARAMETERS.shadowReceiverConstantBias,
+            DEPTH_BIAS_BEHAVIOR
         );
 
         table.end();

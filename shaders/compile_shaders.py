@@ -37,6 +37,8 @@ compile_shader('./deferred/', 'gbuffer.vert', 'gbuffer.vert.spv')
 compile_shader('./deferred/', 'light.comp', 'light.comp.spv')
 compile_shader('./deferred/', 'ssao.comp', 'ssao.comp.spv')
 
+compile_shader('./shadowmapping/', 'offscreen.vert', 'offscreen.vert.spv')
+
 compile_shader('./', 'geometry.frag', 'geometry.frag.spv')
 compile_shader('./', 'geometry.vert', 'geometry.vert.spv')
 compile_shader('./', 'oetf_srgb.comp', 'oetf_srgb.comp.spv')

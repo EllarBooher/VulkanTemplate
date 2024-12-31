@@ -48,6 +48,7 @@ auto selectPhysicalDevice(
         .set_required_features(features)
         .add_required_extension_features(shaderObjectFeature)
         .add_required_extension(VK_EXT_SHADER_OBJECT_EXTENSION_NAME)
+        .add_required_extension(VK_EXT_DEPTH_BIAS_CONTROL_EXTENSION_NAME)
         .set_surface(surface)
         .select();
 }
