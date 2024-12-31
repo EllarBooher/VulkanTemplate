@@ -159,8 +159,8 @@ auto computeLightProjView(
 
     // TODO: compute light projection matrix based on camera frustrum/scene size
 
-    glm::vec3 const min{-4.0F, -4.0F, near};
-    glm::vec3 const max{4.0F, 4.0F, far};
+    glm::vec3 const min{-parameters.lightProjViewExtent, near};
+    glm::vec3 const max{parameters.lightProjViewExtent, far};
 
     glm::mat4x4 const projection{
         glm::orthoLH_ZO(min.x, max.x, min.y, max.y, min.z, max.z)
@@ -1119,16 +1119,17 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
 
     .blurAOTexture = true,
 
-    .shadowReceiverPlaneDepthBias = 4.0F,
+    .enableShadows = true,
+
+    .shadowReceiverPlaneDepthBias = 60.0F,
     .shadowReceiverConstantBias = 0.001F,
 
     .depthBiasConstant = 0.0F,
-    .depthBiasSlope = 0.0F,
+    .depthBiasSlope = -2.0F,
 
-    .shadowNearPlane = 0.0F,
+    .lightProjViewExtent = glm::vec2{10.0F, 10.F},
+    .shadowNearPlane = -10.0F,
     .shadowFarPlane = 10.0F,
-
-    .enableShadows = true,
 };
 // NOLINTEND(readability-magic-numbers)
 
@@ -1952,20 +1953,60 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             DEFAULT_PARAMETERS.gbufferWhiteOverride
         );
 
+        table.rowBoolean(
+            "Enable Shadows",
+            m_parameters.enableShadows,
+            DEFAULT_PARAMETERS.enableShadows
+        );
+
         PropertySliderBehavior constexpr DEPTH_BIAS_BEHAVIOR{
             .speed = 0.01F,
         };
         table.rowFloat(
-            "Depth Bias Constant Factor",
+            "Shadow Reciever Plane Depth Bias",
+            m_parameters.shadowReceiverPlaneDepthBias,
+            DEFAULT_PARAMETERS.shadowReceiverPlaneDepthBias,
+            DEPTH_BIAS_BEHAVIOR
+        );
+
+        table.rowFloat(
+            "Shadow Receiver Constant Bias",
+            m_parameters.shadowReceiverConstantBias,
+            DEFAULT_PARAMETERS.shadowReceiverConstantBias,
+            DEPTH_BIAS_BEHAVIOR
+        );
+
+        table.rowFloat(
+            "Fixed Function Depth Bias Constant",
             m_parameters.depthBiasConstant,
             DEFAULT_PARAMETERS.depthBiasConstant,
             DEPTH_BIAS_BEHAVIOR
         );
         table.rowFloat(
-            "Depth Bias Slope Factor",
+            "Fixed Function Depth Bias Slope",
             m_parameters.depthBiasSlope,
             DEFAULT_PARAMETERS.depthBiasSlope,
             DEPTH_BIAS_BEHAVIOR
+        );
+
+        PropertySliderBehavior const PROJECTION_EXTENT_BEHAVIOR{
+            .speed = 0.01F,
+            .bounds =
+                FloatBounds{
+                    .min = 0.0F,
+                }
+        };
+        table.rowFloat(
+            "Light Projection Width",
+            m_parameters.lightProjViewExtent.x,
+            DEFAULT_PARAMETERS.lightProjViewExtent.x,
+            PROJECTION_EXTENT_BEHAVIOR
+        );
+        table.rowFloat(
+            "Light Projection Height",
+            m_parameters.lightProjViewExtent.y,
+            DEFAULT_PARAMETERS.lightProjViewExtent.y,
+            PROJECTION_EXTENT_BEHAVIOR
         );
 
         PropertySliderBehavior const DEPTH_NEAR_BEHAVIOR{
@@ -1993,29 +2034,9 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
             "Light Shadow Depth Far Plane",
             m_parameters.shadowFarPlane,
             glm::max(
-                DEFAULT_PARAMETERS.shadowNearPlane, m_parameters.shadowNearPlane
+                DEFAULT_PARAMETERS.shadowFarPlane, m_parameters.shadowNearPlane
             ),
             DEPTH_FAR_BEHAVIOR
-        );
-
-        table.rowBoolean(
-            "Enable Shadows",
-            m_parameters.enableShadows,
-            DEFAULT_PARAMETERS.enableShadows
-        );
-
-        table.rowFloat(
-            "Shadow Reciever Plane Depth Bias",
-            m_parameters.shadowReceiverPlaneDepthBias,
-            DEFAULT_PARAMETERS.shadowReceiverPlaneDepthBias,
-            DEPTH_BIAS_BEHAVIOR
-        );
-
-        table.rowFloat(
-            "Shadow Receiver Constant Bias",
-            m_parameters.shadowReceiverConstantBias,
-            DEFAULT_PARAMETERS.shadowReceiverConstantBias,
-            DEPTH_BIAS_BEHAVIOR
         );
 
         table.end();

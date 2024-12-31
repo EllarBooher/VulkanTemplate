@@ -55,15 +55,27 @@ struct LightingPassParameters
 
     bool enableShadows;
 
-    // Offset shadow reciever position by the normal, scaled by this factor
+    // Controls the scale that shadow map coordinates are offset by the surface
+    // normal. Additional calculations are performed that scale based on the
+    // length of the normal apparent to the light, but this factor scales the
+    // final output. This is most important for removing jagged perspective
+    // artifacts on surfaces that are nearly perpendicular to a light, for which
+    // a sufficient amount of depth bias sloping would cause an unacceptable
+    // amount of peter panning.
     float shadowReceiverPlaneDepthBias;
-    // Subtract a constant bias from shadow receiver depth
+    // Subtract a constant bias from final shadow receiver depth during lighting
+    // calculations.
     float shadowReceiverConstantBias;
 
-    // Utilized for Vulkan fixed function depth computations
+    // Utilized for Vulkan fixed function depth map rasterization.
+
     float depthBiasConstant;
     float depthBiasSlope;
 
+    // Manual control for the size of the directional light's orthogonal
+    // projection box.
+
+    glm::vec2 lightProjViewExtent;
     float shadowNearPlane;
     float shadowFarPlane;
 

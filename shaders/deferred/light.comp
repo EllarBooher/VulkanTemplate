@@ -154,30 +154,63 @@ const mat4 TO_TEX_COORD_MAT = mat4(
 );
 // clang-format on
 
-float sampleShadowMap(sampler2D map, const mat4 lightProjView, const vec3 lightIncident, const vec3 position, const vec3 normal)
+vec4 computeShadowCoord(
+    const mat4 lightProjView, 
+    const vec3 lightIncident, 
+    const vec3 position, 
+    const vec3 normal
+)
+{
+    // Scale the bias by the size of a texel in shadow space
+    // coords run from (-1,-1) to (1,1) so we multiply by 2
+    const float texelSize = 2.0 / pc.shadowMapSize.x;
+    const float angleFactor = clamp(1.0 - dot(-lightIncident, normal), 0.0, 1.0);
+    const float bias = angleFactor * texelSize * pc.shadowReceiverPlaneDepthBias;
+
+    vec4 shadowCoord = TO_TEX_COORD_MAT * lightProjView * vec4(position + bias * normal, 1.0);
+    shadowCoord /= shadowCoord.w;
+
+    return shadowCoord;
+}
+
+float sampleShadow_PCF(
+    sampler2D map, 
+    const vec4 shadowCoord
+)
 {
     if(!pc.enableShadows)
     {
         return 1.0;
     }
 
-    // Scale the bias by the size of a texel in shadow space
-    // coords run from (-1,-1) to (1,1) so we multiply by 2
-    const float texelSize = 2.0 / pc.shadowMapSize.x;
-    const float bias = clamp(1.0 - dot(-lightIncident, normal), 0.0, 1.0) * texelSize * pc.shadowReceiverPlaneDepthBias;
+    const ivec2 shadowmapDimensions = textureSize(map, 0);
 
-    const vec4 shadowCoord = TO_TEX_COORD_MAT * lightProjView * vec4(position + bias * normal, 1.0);
+    const float dx = 1.0 / float(shadowmapDimensions.x);
+    const float dy = 1.0 / float(shadowmapDimensions.y);
 
-    float receiverDepth = shadowCoord.z;
-    const float occluderDepth = texture(map, shadowCoord.xy).r;
+    float summedDistance = 0.0;
 
-    // Reverse-Z
-    if (occluderDepth > 0.0 && occluderDepth > receiverDepth + pc.shadowReceiverConstantBias)
+    const int SAMPLE_RANGE = 2;
+    const int SAMPLE_COUNT = (2 * SAMPLE_RANGE + 1) * (2 * SAMPLE_RANGE + 1);
+
+    const float fragmentDepth = shadowCoord.z;
+
+    for (int y = -SAMPLE_RANGE; y <= SAMPLE_RANGE; y++)
     {
-        return 0.0;
+        for (int x = -SAMPLE_RANGE; x <= SAMPLE_RANGE; x++)
+        {
+            const vec2 offsetShadowCoord = shadowCoord.xy + vec2(x * dx, y * dy);
+            const float occluderDepth = texture(map, offsetShadowCoord).r;
+
+            // Reverse-Z
+            if (occluderDepth > 0.0 && occluderDepth > fragmentDepth + pc.shadowReceiverConstantBias)
+            {
+                summedDistance += 1.0;
+            }
+        }
     }
 
-    return 1.0;
+    return 1.0 - summedDistance / SAMPLE_COUNT;
 }
 
 
@@ -214,12 +247,15 @@ void main()
 
     // Slightly offset light
     const vec3 lightForward = normalize(pc.lightForward.xyz);
-    const float shadowTransmittance = sampleShadowMap(
-        shadowmap, 
+    const vec4 shadowCoord = computeShadowCoord(
         pc.lightProjView, 
         pc.lightForward.xyz, 
         material.position.xyz, 
         material.normal.xyz
+    );
+    const float shadowTransmittance = sampleShadow_PCF(
+        shadowmap, 
+        shadowCoord
     );
 
     const vec3 lightContribution = shadowTransmittance * computeLightContribution(lightForward, material, viewDirection);
