@@ -12,6 +12,7 @@
 #include "vulkan_template/app/Scene.hpp"
 #include "vulkan_template/app/Swapchain.hpp"
 #include "vulkan_template/app/UILayer.hpp"
+#include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/platform/PlatformUtils.hpp"
 #include "vulkan_template/vulkan/Image.hpp"
@@ -24,7 +25,6 @@
 #include <filesystem>
 #include <functional>
 #include <glm/vec2.hpp>
-#include <memory>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -249,7 +249,7 @@ auto initialize() -> std::optional<Resources>
     VKT_INFO("Loading Meshes from disk and creating Scene...");
 
     std::optional<std::filesystem::path> meshPathResult{
-        vkt::openFile("Load Mesh", windowResult.value())
+        vkt::openFile("Load glTF Scene", windowResult.value())
     };
     if (!meshPathResult.has_value())
     {
@@ -257,29 +257,18 @@ auto initialize() -> std::optional<Resources>
         return std::nullopt;
     }
 
-    std::vector<vkt::Mesh> meshes{vkt::Mesh::fromPath(
+    std::optional<vkt::Scene> sceneResult{vkt::Scene::loadSceneFromDisk(
         graphicsContext.device(),
         graphicsContext.allocator(),
         submissionQueue,
         materialPoolResult.value(),
         meshPathResult.value()
     )};
-    if (meshes.empty())
-    {
-        VKT_ERROR("Failed to load any meshes.");
-        return std::nullopt;
-    }
-
-    std::optional<vkt::Scene> sceneResult{vkt::Scene::create(
-        graphicsContext.device(), graphicsContext.allocator()
-    )};
     if (!sceneResult.has_value())
     {
-        VKT_ERROR("Faield to create scene.");
+        VKT_ERROR("Failed to create scene.");
         return std::nullopt;
     }
-    sceneResult.value().setMesh(std::make_unique<vkt::Mesh>(std::move(meshes[0])
-    ));
 
     VKT_INFO("Successfully initialized Application resources.");
 

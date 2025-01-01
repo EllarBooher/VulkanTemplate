@@ -4,7 +4,6 @@
 #include "vulkan_template/core/Integer.hpp"
 #include "vulkan_template/vulkan/Buffers.hpp"
 #include "vulkan_template/vulkan/VulkanUsage.hpp"
-#include <filesystem>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include <memory>
@@ -30,6 +29,12 @@ struct VertexPacked
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
 static_assert(sizeof(VertexPacked) == 48ULL);
+
+struct MeshVertices
+{
+    std::vector<uint32_t> indices{};
+    std::vector<vkt::VertexPacked> vertices{};
+};
 
 struct MeshBuffers
 {
@@ -80,6 +85,8 @@ struct GeometrySurface
     uint32_t firstIndex;
     uint32_t indexCount;
     MaterialMaps material;
+
+    bool hasTexCoords{false};
 };
 
 struct MaterialDescriptorPool
@@ -116,14 +123,6 @@ private:
 
 struct Mesh
 {
-    static auto fromPath(
-        VkDevice,
-        VmaAllocator,
-        ImmediateSubmissionQueue const&,
-        MaterialDescriptorPool&,
-        std::filesystem::path const& path
-    ) -> std::vector<Mesh>;
-
     std::vector<GeometrySurface> surfaces{};
     std::unique_ptr<MeshBuffers> meshBuffers{};
 };

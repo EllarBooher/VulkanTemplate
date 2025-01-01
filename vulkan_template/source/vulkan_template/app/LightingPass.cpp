@@ -1388,11 +1388,12 @@ void recordDrawShadowmap(
     VkShaderStageFlagBits constexpr VERTEX_STAGE{VK_SHADER_STAGE_VERTEX_BIT};
     vkCmdBindShadersEXT(cmd, 1, &VERTEX_STAGE, &resources.vertexShader);
 
+    vkt::InstanceRenderingInfo const sceneRenderInfo{
+        scene.instanceRenderingInfo()
+    };
+    for (auto const& instanceSpan : sceneRenderInfo.instances)
     {
-        vkt::MeshBuffers& meshBuffers{*scene.mesh().meshBuffers};
-        vkt::InstanceRenderingInfo const sceneRenderInfo{
-            scene.instanceRenderingInfo()
-        };
+        vkt::MeshBuffers& meshBuffers{*instanceSpan.mesh.get().meshBuffers};
 
         ShadowMapPushConstant const vertexPushConstant{
             .vertexBuffer = meshBuffers.vertexAddress(),
@@ -1412,11 +1413,15 @@ void recordDrawShadowmap(
             cmd, meshBuffers.indexBuffer(), 0, VK_INDEX_TYPE_UINT32
         );
 
-        VkDeviceSize const instanceCount{sceneRenderInfo.instanceCount};
-        for (auto const& surface : scene.mesh().surfaces)
+        for (auto const& surface : instanceSpan.mesh.get().surfaces)
         {
             vkCmdDrawIndexed(
-                cmd, surface.indexCount, instanceCount, surface.firstIndex, 0, 0
+                cmd,
+                surface.indexCount,
+                instanceSpan.count,
+                surface.firstIndex,
+                0,
+                instanceSpan.start
             );
         }
     }
@@ -1497,7 +1502,7 @@ void recordDrawSSAO(
                 static_cast<float>(gBufferCapacity.width),
                 static_cast<float>(gBufferCapacity.height)
             },
-        .cameraPosition = glm::vec4{scene.camera().position, 1.0F},
+        .cameraPosition = glm::vec4{scene.camera().translation, 1.0F},
         .extent =
             glm::vec2{
                 static_cast<float>(drawRect.extent.width),
@@ -1699,7 +1704,7 @@ void recordDrawLighting(
                 static_cast<float>(gBufferCapacity.width),
                 static_cast<float>(gBufferCapacity.height)
             },
-        .cameraPosition = glm::vec4{scene.camera().position, 1.0F},
+        .cameraPosition = glm::vec4{scene.camera().translation, 1.0F},
         .lightForward = glm::vec4{lightForward, 0.0},
         .cameraProjView = scene.cameraProjView(aspectRatio),
         .extent =

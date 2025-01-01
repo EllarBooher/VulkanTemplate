@@ -14,6 +14,7 @@
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <cassert>
 #include <filesystem>
+#include <functional>
 #include <glm/mat4x4.hpp>
 #include <span>
 #include <utility>
@@ -673,22 +674,32 @@ void GBufferPipeline::recordDraw(
     assert(stages.size() == shaders.size());
     vkCmdBindShadersEXT(cmd, stages.size(), stages.data(), shaders.data());
 
+    vkt::InstanceRenderingInfo const sceneRenderInfo{
+        scene.instanceRenderingInfo()
+    };
+    for (auto const& instanceSpan : sceneRenderInfo.instances)
     {
         auto const aspectRatio{static_cast<float>(
             vkt::aspectRatio(renderTarget.size().extent).value()
         )};
 
-        MeshBuffers& meshBuffers{*scene.mesh().meshBuffers};
+        MeshBuffers& meshBuffers{*instanceSpan.mesh.get().meshBuffers};
+
         InstanceRenderingInfo const sceneRenderInfo{scene.instanceRenderingInfo(
         )};
 
-        ::PushConstantVertex const vertexPushConstant{
+        PushConstantVertex const vertexPushConstant{
             .vertexBuffer = meshBuffers.vertexAddress(),
             .modelBuffer = sceneRenderInfo.models,
             .modelInverseTransposeBuffer =
                 sceneRenderInfo.modelInverseTransposes,
             .cameraProjView = scene.cameraProjView(aspectRatio),
         };
+
+        vkCmdBindIndexBuffer(
+            cmd, meshBuffers.indexBuffer(), 0, VK_INDEX_TYPE_UINT32
+        );
+
         vkCmdPushConstants(
             cmd,
             m_graphicsLayout,
@@ -698,12 +709,7 @@ void GBufferPipeline::recordDraw(
             &vertexPushConstant
         );
 
-        vkCmdBindIndexBuffer(
-            cmd, meshBuffers.indexBuffer(), 0, VK_INDEX_TYPE_UINT32
-        );
-
-        VkDeviceSize const instanceCount{sceneRenderInfo.instanceCount};
-        for (GeometrySurface const& surface : scene.mesh().surfaces)
+        for (auto const& surface : instanceSpan.mesh.get().surfaces)
         {
             vkCmdBindDescriptorSets(
                 cmd,
@@ -716,7 +722,12 @@ void GBufferPipeline::recordDraw(
             );
 
             vkCmdDrawIndexed(
-                cmd, surface.indexCount, instanceCount, surface.firstIndex, 0, 0
+                cmd,
+                surface.indexCount,
+                instanceSpan.count,
+                surface.firstIndex,
+                0,
+                instanceSpan.start
             );
         }
     }
