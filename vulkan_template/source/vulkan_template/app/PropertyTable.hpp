@@ -27,8 +27,8 @@ struct PropertySliderBehavior
 
 struct PropertyTableRowTexts
 {
-    std::string name{""};
-    std::string tooltip{""};
+    std::string name{};
+    std::string tooltip{};
 };
 
 struct PropertyTable
@@ -99,7 +99,7 @@ private:
 
     // If this returns false, the row should not be modified further.
     // Do NOT call rowEnd if this returns false.
-    auto rowBegin(PropertyTableRowTexts const& name) -> bool;
+    auto rowBegin(PropertyTableRowTexts const& rowTexts) -> bool;
     void rowEnd();
 
 public:

@@ -30,7 +30,7 @@ void PropertyTable::nameColumn(PropertyTableRowTexts const& rowTexts)
                 ImGui::PushTextWrapPos(
                     TOOLTIP_WIDTH_EM * ImGui::GetTextLineHeight()
                 );
-                ImGui::Text(rowTexts.tooltip.c_str());
+                ImGui::Text("%s", rowTexts.tooltip.c_str());
                 ImGui::EndTooltip();
             }
         }
@@ -203,7 +203,7 @@ auto PropertyTable::childPropertyEnd() -> PropertyTable&
     return *this;
 }
 
-auto PropertyTable::rowBegin(PropertyTableRowTexts const& label) -> bool
+auto PropertyTable::rowBegin(PropertyTableRowTexts const& rowTexts) -> bool
 {
     assert(!m_rowOpen && "Row opened without ending the previous one.");
 
@@ -219,11 +219,11 @@ auto PropertyTable::rowBegin(PropertyTableRowTexts const& label) -> bool
     m_rowOpen = true;
 
     ImGui::PushID(static_cast<int32_t>(m_propertyCount));
-    ImGui::PushID(label.name.c_str());
+    ImGui::PushID(rowTexts.name.c_str());
 
     ImGui::TableNextRow();
 
-    Self::nameColumn(label);
+    Self::nameColumn(rowTexts);
 
     return true;
 }
