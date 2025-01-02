@@ -136,7 +136,7 @@ auto MaterialDescriptorPool::create(VkDevice const device)
     pool.device = device;
 
     // Max number of unique surfaces on meshes this pool will be able to support
-    uint32_t constexpr MAX_SETS{100};
+    uint32_t constexpr MAX_SETS{800};
     std::vector<vkt::DescriptorAllocator::PoolSizeRatio> const
         materialPoolRatios{
             {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .ratio = 1.0F}
