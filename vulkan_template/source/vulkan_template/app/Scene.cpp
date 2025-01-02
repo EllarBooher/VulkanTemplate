@@ -169,9 +169,8 @@ auto loadModelMatricesByGLTFIndex(fastgltf::Asset const& gltf)
             trs.rotation[3], trs.rotation[0], trs.rotation[1], trs.rotation[2]
         )};
 
-        // Convert from glTF coords
         glm::vec3 const translation{
-            -trs.translation[0], -trs.translation[1], trs.translation[2]
+            trs.translation[0], trs.translation[1], trs.translation[2]
         };
 
         glm::vec3 const scale{trs.scale[0], trs.scale[1], trs.scale[2]};
@@ -183,8 +182,14 @@ auto loadModelMatricesByGLTFIndex(fastgltf::Asset const& gltf)
 
         if (gltfNode.meshIndex.has_value())
         {
+            glm::mat4x4 const fromGLTF{glm::scale(glm::vec3{-1.0, -1.0, 1.0})};
+            glm::mat4x4 const toGLTF{glm::inverse(fromGLTF)};
+
+            glm::mat4x4 const finalModel{fromGLTF * model * toGLTF};
+
             size_t const meshIndex{gltfNode.meshIndex.value()};
-            modelMatricesByGLTFIndex[gltfNode.meshIndex.value()].push_back(model
+            modelMatricesByGLTFIndex[gltfNode.meshIndex.value()].push_back(
+                finalModel
             );
         }
 
