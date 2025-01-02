@@ -670,6 +670,8 @@ auto loadMeshesByGLTFIndex(
         // Proliferate indices and vertices
         for (auto&& primitive : mesh.primitives)
         {
+            glm::vec4 baseColorFactor{1.0};
+
             if (!primitive.indicesAccessor.has_value()
                 || primitive.indicesAccessor.value() >= gltf.accessors.size())
             {
@@ -706,6 +708,8 @@ auto loadMeshesByGLTFIndex(
                     "index.",
                     mesh.name
                 );
+
+                surface.material = defaultMaterialData;
             }
             else if (size_t const materialIndex{primitive.materialIndex.value()
                      };
@@ -720,17 +724,12 @@ auto loadMeshesByGLTFIndex(
             else
             {
                 surface.material = materialByGLTFIndex[materialIndex];
-            }
-
-            if (!primitive.materialIndex.has_value())
-            {
-                VKT_WARNING(
-                    "Mesh {} has a primitive that is missing material "
-                    "index.",
-                    mesh.name
-                );
-
-                surface.material = defaultMaterialData;
+                baseColorFactor = glm::vec4{
+                    gltf.materials[materialIndex].pbrData.baseColorFactor[0],
+                    gltf.materials[materialIndex].pbrData.baseColorFactor[1],
+                    gltf.materials[materialIndex].pbrData.baseColorFactor[2],
+                    gltf.materials[materialIndex].pbrData.baseColorFactor[3]
+                };
             }
 
             size_t const initialVertexIndex{vertices.size()};
@@ -769,7 +768,7 @@ auto loadMeshesByGLTFIndex(
                         .uv_x = 0.0F,
                         .normal = glm::vec3{1, 0, 0},
                         .uv_y = 0.0F,
-                        .color = glm::vec4{1.0F},
+                        .color = baseColorFactor,
                     });
                 }
                 );
@@ -816,7 +815,7 @@ auto loadMeshesByGLTFIndex(
                         gltf,
                         gltf.accessors[(*colors).second],
                         [&](glm::vec4 color, size_t index)
-                    { vertices[initialVertexIndex + index].color = color; }
+                    { vertices[initialVertexIndex + index].color *= color; }
                     );
                 }
             }
