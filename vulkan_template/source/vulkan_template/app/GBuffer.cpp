@@ -389,6 +389,19 @@ auto GBuffer::attachmentInfo(VkImageLayout const layout) const -> std::array<
 
     return infos;
 };
+void GBufferPipeline::GBufferTexturePipeline::cleanup(VkDevice const device)
+{
+    vkDestroyDescriptorSetLayout(device, materialDescriptorLayout, nullptr);
+    vkDestroyShaderEXT(device, vertexStage, nullptr);
+    vkDestroyShaderEXT(device, fragmentStage, nullptr);
+    vkDestroyPipelineLayout(device, layout, nullptr);
+}
+void GBufferPipeline::GBufferTexturelessPipeline::cleanup(VkDevice const device)
+{
+    vkDestroyShaderEXT(device, vertexStage, nullptr);
+    vkDestroyShaderEXT(device, fragmentStage, nullptr);
+    vkDestroyPipelineLayout(device, layout, nullptr);
+}
 } // namespace vkt
 
 namespace
@@ -489,12 +502,8 @@ namespace vkt
 auto GBufferPipeline::operator=(GBufferPipeline&& other) -> GBufferPipeline&
 {
     m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-    m_fragmentStage = std::exchange(other.m_fragmentStage, VK_NULL_HANDLE);
-    m_vertexStage = std::exchange(other.m_vertexStage, VK_NULL_HANDLE);
-
-    m_gbufferDescriptorLayout =
-        std::exchange(other.m_gbufferDescriptorLayout, VK_NULL_HANDLE);
-    m_graphicsLayout = std::exchange(other.m_graphicsLayout, VK_NULL_HANDLE);
+    m_texturelessPipeline = std::exchange(other.m_texturelessPipeline, {});
+    m_texturePipeline = std::exchange(other.m_texturePipeline, {});
 
     m_creationArguments = std::exchange(other.m_creationArguments, {});
 
@@ -504,16 +513,13 @@ GBufferPipeline::GBufferPipeline(GBufferPipeline&& other)
 {
     *this = std::move(other);
 }
+
 GBufferPipeline::~GBufferPipeline()
 {
     if (m_device != VK_NULL_HANDLE)
     {
-        vkDestroyPipelineLayout(m_device, m_graphicsLayout, nullptr);
-        vkDestroyDescriptorSetLayout(
-            m_device, m_gbufferDescriptorLayout, nullptr
-        );
-        vkDestroyShaderEXT(m_device, m_vertexStage, nullptr);
-        vkDestroyShaderEXT(m_device, m_fragmentStage, nullptr);
+        m_texturePipeline.cleanup(m_device);
+        m_texturelessPipeline.cleanup(m_device);
     }
 }
 auto GBufferPipeline::create(
@@ -525,77 +531,169 @@ auto GBufferPipeline::create(
     pipeline.m_device = device;
     pipeline.m_creationArguments = arguments;
 
-    std::filesystem::path const vertexPath{"shaders/deferred/gbuffer.vert.spv"};
-    std::filesystem::path const fragmentPath{"shaders/deferred/gbuffer.frag.spv"
-    };
-
-    auto gbufferDescriptorLayoutResult{
-        MaterialDescriptorPool::allocateMaterialDescriptorLayout(device)
-    };
-    if (!gbufferDescriptorLayoutResult.has_value())
     {
-        VKT_ERROR("Failed to allocator GBuffer descriptor set layout for "
-                  "GBuffer Pipeline.");
-        return std::nullopt;
+        GBufferPipeline::GBufferTexturePipeline& resources{
+            pipeline.m_texturePipeline
+        };
+
+        std::filesystem::path const vertexPath{
+            "shaders/deferred/gbuffer.textures.vert.spv"
+        };
+        std::filesystem::path const fragmentPath{
+            "shaders/deferred/gbuffer.textures.frag.spv"
+        };
+
+        auto gbufferDescriptorLayoutResult{
+            MaterialDescriptorPool::allocateMaterialDescriptorLayout(device)
+        };
+        if (!gbufferDescriptorLayoutResult.has_value())
+        {
+            VKT_ERROR("Failed to allocator GBuffer descriptor set layout for "
+                      "GBuffer Pipeline.");
+            return std::nullopt;
+        }
+        resources.materialDescriptorLayout =
+            gbufferDescriptorLayoutResult.value();
+
+        std::vector<VkDescriptorSetLayout> const layouts{
+            resources.materialDescriptorLayout
+        };
+        std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .offset = 0,
+            .size = sizeof(::PushConstantVertex)
+        }};
+
+        std::optional<VkShaderEXT> const vertexShaderResult{
+            vkt::loadShaderObject(
+                device,
+                vertexPath,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                layouts,
+                ranges,
+                VkSpecializationInfo{}
+            )
+        };
+        std::optional<VkShaderEXT> const fragmentShaderResult{
+            vkt::loadShaderObject(
+                device,
+                fragmentPath,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                (VkShaderStageFlagBits)0,
+                layouts,
+                ranges,
+                VkSpecializationInfo{}
+            )
+        };
+        if (!vertexShaderResult.has_value()
+            || !fragmentShaderResult.has_value())
+        {
+            VKT_ERROR("Failed to compile shader.");
+            return std::nullopt;
+        }
+
+        resources.fragmentStage = fragmentShaderResult.value();
+        resources.vertexStage = vertexShaderResult.value();
+
+        VkPipelineLayoutCreateInfo const layoutCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .pNext = nullptr,
+
+            .flags = 0,
+
+            .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+            .pSetLayouts = layouts.data(),
+
+            .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+            .pPushConstantRanges = ranges.data(),
+        };
+
+        if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
+                device, &layoutCreateInfo, nullptr, &resources.layout
+            )};
+            pipelineLayoutResult != VK_SUCCESS)
+        {
+            VKT_LOG_VK(
+                pipelineLayoutResult, "Failed to create pipeline layout."
+            );
+            return std::nullopt;
+        }
     }
-    pipeline.m_gbufferDescriptorLayout = gbufferDescriptorLayoutResult.value();
-
-    std::vector<VkDescriptorSetLayout> const layouts{
-        pipeline.m_gbufferDescriptorLayout
-    };
-    std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .offset = 0,
-        .size = sizeof(::PushConstantVertex)
-    }};
-
-    std::optional<VkShaderEXT> const vertexShaderResult{vkt::loadShaderObject(
-        device,
-        vertexPath,
-        VK_SHADER_STAGE_VERTEX_BIT,
-        VK_SHADER_STAGE_FRAGMENT_BIT,
-        layouts,
-        ranges,
-        VkSpecializationInfo{}
-    )};
-    std::optional<VkShaderEXT> const fragmentShaderResult{vkt::loadShaderObject(
-        device,
-        fragmentPath,
-        VK_SHADER_STAGE_FRAGMENT_BIT,
-        (VkFlags)0,
-        layouts,
-        ranges,
-        VkSpecializationInfo{}
-    )};
-    if (!vertexShaderResult.has_value() || !fragmentShaderResult.has_value())
     {
-        VKT_ERROR("Failed to compile shader.");
-        return std::nullopt;
-    }
+        GBufferPipeline::GBufferTexturelessPipeline& resources{
+            pipeline.m_texturelessPipeline
+        };
 
-    pipeline.m_fragmentStage = fragmentShaderResult.value();
-    pipeline.m_vertexStage = vertexShaderResult.value();
+        std::filesystem::path const vertexPath{
+            "shaders/deferred/gbuffer.no_textures.vert.spv"
+        };
+        std::filesystem::path const fragmentPath{
+            "shaders/deferred/gbuffer.no_textures.frag.spv"
+        };
 
-    VkPipelineLayoutCreateInfo const layoutCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
+        std::vector<VkDescriptorSetLayout> const layouts{};
+        std::vector<VkPushConstantRange> const ranges{VkPushConstantRange{
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .offset = 0,
+            .size = sizeof(::PushConstantVertex)
+        }};
 
-        .flags = 0,
+        std::optional<VkShaderEXT> const vertexShaderResult{
+            vkt::loadShaderObject(
+                device,
+                vertexPath,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                layouts,
+                ranges,
+                VkSpecializationInfo{}
+            )
+        };
+        std::optional<VkShaderEXT> const fragmentShaderResult{
+            vkt::loadShaderObject(
+                device,
+                fragmentPath,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                (VkShaderStageFlagBits)0,
+                layouts,
+                ranges,
+                VkSpecializationInfo{}
+            )
+        };
+        if (!vertexShaderResult.has_value()
+            || !fragmentShaderResult.has_value())
+        {
+            VKT_ERROR("Failed to compile shader.");
+            return std::nullopt;
+        }
 
-        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts = layouts.data(),
+        resources.fragmentStage = fragmentShaderResult.value();
+        resources.vertexStage = vertexShaderResult.value();
 
-        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-        .pPushConstantRanges = ranges.data(),
-    };
+        VkPipelineLayoutCreateInfo const layoutCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .pNext = nullptr,
 
-    if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
-            device, &layoutCreateInfo, nullptr, &pipeline.m_graphicsLayout
-        )};
-        pipelineLayoutResult != VK_SUCCESS)
-    {
-        VKT_LOG_VK(pipelineLayoutResult, "Failed to create pipeline layout.");
-        return std::nullopt;
+            .flags = 0,
+
+            .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+            .pSetLayouts = layouts.data(),
+
+            .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+            .pPushConstantRanges = ranges.data(),
+        };
+
+        if (VkResult const pipelineLayoutResult{vkCreatePipelineLayout(
+                device, &layoutCreateInfo, nullptr, &resources.layout
+            )};
+            pipelineLayoutResult != VK_SUCCESS)
+        {
+            VKT_LOG_VK(
+                pipelineLayoutResult, "Failed to create pipeline layout."
+            );
+            return std::nullopt;
+        }
     }
 
     return result;
@@ -646,11 +744,6 @@ void GBufferPipeline::recordDraw(
         renderingInfo(gbuffer.size(), gbufferAttachments, &depthAttachment)
     };
 
-    std::array<VkShaderStageFlagBits, 2> const stages{
-        VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT
-    };
-    std::array<VkShaderEXT, 2> const shaders{m_vertexStage, m_fragmentStage};
-
     vkCmdBeginRendering(cmd, &renderInfo);
 
     VkClearValue const clearColor{.color{.float32{0.0, 0.0, 0.0, 0.0}}};
@@ -671,8 +764,23 @@ void GBufferPipeline::recordDraw(
     };
     vkCmdClearAttachments(cmd, VKR_ARRAY(clearAttachmentInfos), 1, &clearRect);
 
-    assert(stages.size() == shaders.size());
-    vkCmdBindShadersEXT(cmd, stages.size(), stages.data(), shaders.data());
+    std::array<VkShaderStageFlagBits, 2> const stages{
+        VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT
+    };
+
+    std::array<VkShaderEXT, 2> const textureShaders{
+        m_texturePipeline.vertexStage, m_texturePipeline.fragmentStage
+    };
+    std::array<VkShaderEXT, 2> const textureLessShaders{
+        m_texturelessPipeline.vertexStage, m_texturelessPipeline.fragmentStage
+    };
+
+    vkCmdBindShadersEXT(
+        cmd, stages.size(), stages.data(), textureShaders.data()
+    );
+    // Swap between shaders as needed. This gives a execution pipelining hit,
+    // but that can be addressed as needed.
+    bool texturedShadersBound{true};
 
     vkt::InstanceRenderingInfo const sceneRenderInfo{
         scene.instanceRenderingInfo()
@@ -685,9 +793,6 @@ void GBufferPipeline::recordDraw(
 
         MeshBuffers& meshBuffers{*instanceSpan.mesh.get().meshBuffers};
 
-        InstanceRenderingInfo const sceneRenderInfo{scene.instanceRenderingInfo(
-        )};
-
         PushConstantVertex const vertexPushConstant{
             .vertexBuffer = meshBuffers.vertexAddress(),
             .modelBuffer = sceneRenderInfo.models,
@@ -696,30 +801,51 @@ void GBufferPipeline::recordDraw(
             .cameraProjView = scene.cameraProjView(aspectRatio),
         };
 
-        vkCmdBindIndexBuffer(
-            cmd, meshBuffers.indexBuffer(), 0, VK_INDEX_TYPE_UINT32
-        );
-
         vkCmdPushConstants(
             cmd,
-            m_graphicsLayout,
+            // TODO: needs to be other layout?
+            m_texturelessPipeline.layout,
             VK_SHADER_STAGE_VERTEX_BIT,
             0,
             sizeof(::PushConstantVertex),
             &vertexPushConstant
         );
 
+        vkCmdBindIndexBuffer(
+            cmd, meshBuffers.indexBuffer(), 0, VK_INDEX_TYPE_UINT32
+        );
+
         for (auto const& surface : instanceSpan.mesh.get().surfaces)
         {
-            vkCmdBindDescriptorSets(
-                cmd,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_graphicsLayout,
-                0,
-                1,
-                &surface.material.descriptor,
-                VKR_ARRAY_NONE
-            );
+            if (surface.hasTexCoords != texturedShadersBound)
+            {
+                // Rebinding like this can be slow, especially if its per mesh
+                // surface, but meshes tend to be uniform across surfaces and
+                // clumped together based on if they have texture coords
+
+                texturedShadersBound = surface.hasTexCoords;
+
+                vkCmdBindShadersEXT(
+                    cmd,
+                    stages.size(),
+                    stages.data(),
+                    texturedShadersBound ? textureShaders.data()
+                                         : textureLessShaders.data()
+                );
+            }
+
+            if (texturedShadersBound)
+            {
+                vkCmdBindDescriptorSets(
+                    cmd,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_texturePipeline.layout,
+                    0,
+                    1,
+                    &surface.material.descriptor,
+                    VKR_ARRAY_NONE
+                );
+            }
 
             vkCmdDrawIndexed(
                 cmd,

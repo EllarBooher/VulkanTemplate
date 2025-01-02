@@ -132,11 +132,29 @@ public:
 private:
     VkDevice m_device;
 
-    VkDescriptorSetLayout m_gbufferDescriptorLayout{VK_NULL_HANDLE};
-    VkPipelineLayout m_graphicsLayout{VK_NULL_HANDLE};
+    struct GBufferTexturePipeline
+    {
+        VkDescriptorSetLayout materialDescriptorLayout{VK_NULL_HANDLE};
+        VkPipelineLayout layout{VK_NULL_HANDLE};
 
-    VkShaderEXT m_vertexStage{VK_NULL_HANDLE};
-    VkShaderEXT m_fragmentStage{VK_NULL_HANDLE};
+        VkShaderEXT vertexStage{VK_NULL_HANDLE};
+        VkShaderEXT fragmentStage{VK_NULL_HANDLE};
+
+        void cleanup(VkDevice);
+    };
+
+    struct GBufferTexturelessPipeline
+    {
+        VkPipelineLayout layout{VK_NULL_HANDLE};
+
+        VkShaderEXT vertexStage{VK_NULL_HANDLE};
+        VkShaderEXT fragmentStage{VK_NULL_HANDLE};
+
+        void cleanup(VkDevice);
+    };
+
+    GBufferTexturePipeline m_texturePipeline{};
+    GBufferTexturelessPipeline m_texturelessPipeline{};
 
     RendererArguments m_creationArguments{};
 };

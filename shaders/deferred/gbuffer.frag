@@ -4,9 +4,12 @@
 #define WITH_NORMAL_MAP_GREEN_UP
 
 layout(location = 0) in vec3 inWorldPosition;
-layout(location = 1) in vec2 inTexCoord;
+layout(location = 1) in vec4 inColor;
 layout(location = 2) in vec3 inNormal;
-layout(location = 3) in vec4 inColor;
+
+#if WITH_TEXTURES == 1
+layout(location = 3) in vec2 inTexCoord;
+#endif
 
 layout(location = 0) out vec4 outDiffuseColor;
 layout(location = 1) out vec4 outSpecularColor;
@@ -14,6 +17,7 @@ layout(location = 2) out vec4 outNormal;
 layout(location = 3) out vec4 outWorldPosition;
 layout(location = 4) out vec4 outOcclusionRoughnessMetallic;
 
+#if WITH_TEXTURES == 1
 // Material Set
 layout(set = 0, binding = 0) uniform sampler2D color;
 layout(set = 0, binding = 1) uniform sampler2D normal;
@@ -56,19 +60,27 @@ vec3 perturbNormal(vec3 N, vec3 V, vec2 texcoord)
     mat3 TBN = cotangentFrame(N, -V, texcoord);
     return normalize(TBN * map);
 }
+#endif
 
 void main()
 {
     outWorldPosition = vec4(inWorldPosition, 1.0);
 
-    vec3 perturbedNormal = perturbNormal(inNormal, inWorldPosition, inTexCoord);
-
-    outNormal = vec4(perturbedNormal, 0.0);
-
+#if WITH_TEXTURES == 1
     vec4 sampledColor = texture(color, inTexCoord);
 
     outDiffuseColor = vec4(inColor.rgb * sampledColor.rgb, 1.0);
     outSpecularColor = vec4(inColor.rgb * sampledColor.rgb, 1.0);
+
+    vec3 perturbedNormal = perturbNormal(inNormal, inWorldPosition, inTexCoord);
+
+    outNormal = vec4(perturbedNormal, 0.0);
+#else
+    outDiffuseColor = vec4(inColor.rgb, 1.0);
+    outSpecularColor = vec4(inColor.rgb, 1.0);
+
+    outNormal = vec4(normalize(inNormal), 0.0);
+#endif
 
     outOcclusionRoughnessMetallic = vec4(1.0, 0.25, 0.0, 0.0);
 }

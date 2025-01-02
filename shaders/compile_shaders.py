@@ -31,9 +31,13 @@ def compile_shader(root, nameGLSL, nameSPIRV, defines=[]):
 		compileArgs.append('-D' + define)	
 
 	subprocess.run(compileArgs, check=True)
+	
+compile_shader('./deferred/', 'gbuffer.frag', 'gbuffer.textures.frag.spv', ['WITH_TEXTURES=1'])
+compile_shader('./deferred/', 'gbuffer.vert', 'gbuffer.textures.vert.spv', ['WITH_TEXTURES=1'])
 
-compile_shader('./deferred/', 'gbuffer.frag', 'gbuffer.frag.spv')
-compile_shader('./deferred/', 'gbuffer.vert', 'gbuffer.vert.spv')
+compile_shader('./deferred/', 'gbuffer.frag', 'gbuffer.no_textures.frag.spv', ['WITH_TEXTURES=0'])
+compile_shader('./deferred/', 'gbuffer.vert', 'gbuffer.no_textures.vert.spv', ['WITH_TEXTURES=0'])
+
 compile_shader('./deferred/', 'light.comp', 'light.comp.spv')
 compile_shader('./deferred/', 'ssao.comp', 'ssao.comp.spv')
 

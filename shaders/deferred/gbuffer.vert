@@ -2,10 +2,17 @@
 
 #extension GL_EXT_buffer_reference2 : require
 
+#ifndef WITH_TEXTURES
+#define WITH_TEXTURES 1
+#endif
+
 layout(location = 0) out vec3 outWorldPosition;
-layout(location = 1) out vec2 outTexCoord;
+layout(location = 1) out vec4 outColor;
 layout(location = 2) out vec3 outNormal;
-layout(location = 3) out vec4 outColor;
+
+#if WITH_TEXTURES == 1
+layout(location = 3) out vec2 outTexCoord;
+#endif
 
 struct Vertex
 {
@@ -55,5 +62,7 @@ void main()
     outNormal = normalize((modelInverseTranspose * vec4(vertex.normal, 0.0)).xyz);
     outColor = vertex.color;
 
+#if WITH_TEXTURES == 1
     outTexCoord = vec2(vertex.uv_x, vertex.uv_y);
+#endif
 }
