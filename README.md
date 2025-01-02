@@ -16,4 +16,4 @@ The various derivatives I've worked on are present as branches of this repositor
 
 | Branch | Description|
 | :---: | --- |
-| [`SSAO`](/EllarBooher/VulkanTemplate/tree/SSAO) | Implementation of a modified Screen Space Ambient Occlusion technique. Front-face and back-face GBuffers are produced for a scene. Per frame, one compute pass per GBuffer modulates the single channel AO texture using occluder/occludee world positions. This AO texture is then applied during a deferred lighting pass to attenuate the ambient lighting. A toggleable directional light with shadows drives specular lighting to showcase the ambient lighting. |
+| [`SSAO`](/../../tree/SSAO) | Implementation of a modified Screen Space Ambient Occlusion technique. Front-face and back-face GBuffers are produced for a scene. Per frame, one compute pass per GBuffer modulates the single channel AO texture using occluder/occludee world positions. This AO texture is then applied during a deferred lighting pass to attenuate the ambient lighting. A toggleable directional light with shadows drives specular lighting to showcase the ambient lighting. |
