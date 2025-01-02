@@ -1,6 +1,6 @@
 # Vulkan Template
 
-This repository is a base template I use for developing rendering applications and experiments based on Vulkan and C++. I strive to utilize best practices and modern techniques while I learn, but these projects are more for my personal learning of how to practically implement rendering techniques instead of being focused examples in a vacuum.
+This repository is a base template I use for developing rendering applications and experiments based on Vulkan and C++. I strive to utilize best practices and modern techniques while I learn, but these projects are more for my personal learning of how to practically implement rendering techniques instead of being exemplary snippets in a vacuum.
 
 ## Requirements
 
@@ -12,7 +12,7 @@ CMake is configured to use FetchContent to pull all of the following dependencie
 
 ## Projects
 
-The various derivatives I've worked on are present as branches of this repository, with useful changes pulled down for later use in other projects since I often develop multiple features to support or highlight each project's goal. This could lead to a messy git history as maintaining all these changes across many branches is very difficult, but that is not my goal. Instead, I take features as they are needed and use them moving forward instead of keeping every branch up to date.
+My derivative projects based on this template are present as branches of this repository, with useful changes pulled down for general use. This could lead to a messy git history as maintaining all these changes across many branches is very difficult, but that is not my goal. Instead, I take features as they are needed and use them moving forward instead of keeping every branch up to date.
 
 | Branch | Image | Description|
 | :---: | --- | --- |
