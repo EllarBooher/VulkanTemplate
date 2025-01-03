@@ -566,6 +566,55 @@ auto PropertyTable::rowVec3(
     return *this;
 }
 
+auto PropertyTable::rowVec2(
+    PropertyTableRowTexts const& rowTexts,
+    glm::vec2& value,
+    glm::vec2 const& resetValue,
+    PropertySliderBehavior behavior
+) -> PropertyTable&
+{
+    if (!Self::rowBegin(rowTexts))
+    {
+        return *this;
+    }
+
+    size_t constexpr COMPONENT_COUNT{glm::vec2::length()};
+
+    ImGui::TableSetColumnIndex(VALUE_INDEX);
+    ImGui::PushMultiItemsWidths(
+        COMPONENT_COUNT, ImGui::GetColumnWidth(VALUE_INDEX)
+    );
+    for (size_t component{0}; component < COMPONENT_COUNT; component++)
+    {
+        float const spacing{ImGui::GetStyle().ItemInnerSpacing.x};
+        if (component > 0)
+        {
+            ImGui::SameLine(0.0F, spacing);
+        }
+
+        ImGui::DragFloat(
+            fmt::format("##{}{}{}", rowTexts.name, m_propertyCount, component)
+                .c_str(),
+            &value[component],
+            behavior.speed,
+            behavior.bounds.min,
+            behavior.bounds.max,
+            "%.4f",
+            behavior.flags
+        );
+        ImGui::PopItemWidth();
+    }
+
+    if (Self::resetColumn(rowTexts.name, value != resetValue))
+    {
+        value = resetValue;
+    }
+
+    Self::rowEnd();
+
+    return *this;
+}
+
 auto PropertyTable::rowColor(
     PropertyTableRowTexts const& rowTexts,
     glm::vec3& value,

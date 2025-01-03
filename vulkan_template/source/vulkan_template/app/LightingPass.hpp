@@ -41,6 +41,9 @@ struct LightingPassParameters
     // correct
     bool normalizeRandomNormals;
 
+    glm::vec2 aoSampleCountBounds;
+    glm::vec2 aoSampleCountNearFar;
+
     float occluderRadius;
     float occluderBias;
     float aoScale;

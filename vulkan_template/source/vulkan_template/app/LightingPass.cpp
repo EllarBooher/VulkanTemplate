@@ -92,11 +92,14 @@ struct SSAOPassPushConstant
     float occluderRadius;
     float occluderBias;
 
-    float aoScale;
+    glm::vec2 sampleCountBounds;
+    glm::vec2 sampleCountNearFar;
+
     glm::vec3 padding0;
+    float aoScale;
 };
 // NOLINTNEXTLINE(readability-magic-numbers)
-static_assert(sizeof(SSAOPassPushConstant) == 64ULL);
+static_assert(sizeof(SSAOPassPushConstant) == 80ULL);
 
 struct SSAOPassSpecializationConstant
 {
@@ -1114,9 +1117,13 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .enableAOFromBackFace = true,
     .enableRandomNormalSampling = true,
     .normalizeRandomNormals = false,
+
+    .aoSampleCountBounds = {6.0F, 2.0F},
+    .aoSampleCountNearFar = {0.1, 100.0},
+
     .occluderRadius = 1.0F,
     .occluderBias = 0.05F,
-    .aoScale = 0.03F,
+    .aoScale = 0.2F,
 
     .blurAOTexture = true,
 
@@ -1510,6 +1517,10 @@ void recordDrawSSAO(
             },
         .occluderRadius = parameters.occluderRadius,
         .occluderBias = parameters.occluderBias,
+
+        .sampleCountBounds = parameters.aoSampleCountBounds,
+        .sampleCountNearFar = parameters.aoSampleCountNearFar,
+
         .aoScale = parameters.aoScale,
     };
 
@@ -1878,6 +1889,25 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
         ImGui::EndDisabled();
         table.childPropertyEnd();
 
+        table.rowVec2(
+            {.name = "AO Sample Count Bounds",
+             .tooltip = "The number of sets of 16-sample disks to perform. "
+                        "Additional sample disks past the first will be scaled."
+            },
+            m_parameters.aoSampleCountBounds,
+            DEFAULT_PARAMETERS.aoSampleCountBounds,
+            {.speed = 0.001F, .bounds = {.min = 0.0}}
+        );
+        table.rowVec2(
+            {.name = "AO Sample Count Near and Far",
+             .tooltip =
+                 "Sample Count is selected based on distance to camera, "
+                 "scaling lerping based on the fraction within these bounds."},
+            m_parameters.aoSampleCountNearFar,
+            DEFAULT_PARAMETERS.aoSampleCountNearFar,
+            {.speed = 0.001F, .bounds = {.min = 0.0}}
+        );
+
         PropertySliderBehavior constexpr RADIUS_BEHAVIOR{
             .speed = 0.0001F,
         };
@@ -1975,7 +2005,8 @@ void LightingPass::controlsWindow(std::optional<ImGuiID> dockNode)
              .tooltip =
                  "All shadow receiving texels are offset by their surface "
                  "normal, which is linearly scaled by the cosine of the "
-                 "normal's angle with the light. This factor provides final "
+                 "normal's angle with the light. This factor provides "
+                 "final "
                  "manual scaling to that offset."},
             m_parameters.shadowReceiverPlaneDepthBias,
             DEFAULT_PARAMETERS.shadowReceiverPlaneDepthBias,

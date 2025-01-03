@@ -206,6 +206,14 @@ public:
         PropertySliderBehavior behavior
     ) -> PropertyTable&;
 
+    // Adds a row with a variable number of floats displayed side by side
+    auto rowVec2(
+        PropertyTableRowTexts const& rowTexts,
+        glm::vec2& value,
+        glm::vec2 const& resetValue,
+        PropertySliderBehavior behavior
+    ) -> PropertyTable&;
+
     auto rowColor(
         PropertyTableRowTexts const& rowTexts,
         glm::vec3& value,

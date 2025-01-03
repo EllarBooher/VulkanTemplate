@@ -28,8 +28,11 @@ layout(push_constant) uniform PushConstant
     float occluderRadius;
     float occluderBias;
 
-    float aoScale;
+    vec2 sampleCountBounds;
+    vec2 sampleCountNearFar;
+
     vec3 padding0;
+    float aoScale;
 } pc;
 
 layout(constant_id = 0) const bool enableRandomNormalSampling = false;
@@ -125,29 +128,38 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
         vec2(0, -1.0)
     );
 
-    // Our sampling strategy is 4 sets of 4, distributed evenly across all angles
-    // Slight density increase towards the center.
-    for(int i = 0; i < 4; i++)
+    const float sampleCountFactor = clamp((distanceToCamera - pc.sampleCountNearFar.x) / (pc.sampleCountNearFar.y - pc.sampleCountNearFar.x), 0.0, 1.0);
+    const int sampleCount = max(
+        int(mix(pc.sampleCountBounds.x, pc.sampleCountBounds.y, sampleCountFactor)),
+        1
+    );
+
+    for(int s = 1; s <= sampleCount; s++)
     {
-        vec2 offset1 = sampleOffsets[i];
-
-        if (enableRandomNormalSampling)
+        // Our sampling strategy is 4 sets of 4, distributed evenly across all angles
+        // Slight density increase towards the center.
+        for(int i = 0; i < 4; i++)
         {
-            offset1 = reflect(offset1, sampleRandomNormal(gbufferUV, 100.0));
+            vec2 offset1 = sampleOffsets[i];
+
+            if (enableRandomNormalSampling)
+            {
+                offset1 = reflect(offset1, sampleRandomNormal(s * gbufferUV, 100.0));
+            }
+
+            // Scale after rotating just in case scaling is nonuniform
+            const vec2 offset2 = (float(s) / sampleCount) * uvSampleRadius * sampleRotate * offset1;
+            offset1 = (float(s) / sampleCount) * uvSampleRadius * offset1;
+
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.25 * offset1);
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.75 * offset1);
+
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.5 * offset2);
+            accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 1.0 * offset2);
         }
-
-        // Scale after rotating just in case scaling is nonuniform
-        const vec2 offset2 = uvSampleRadius * sampleRotate * offset1;
-        offset1 = uvSampleRadius * offset1;
-
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.25 * offset1);
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.75 * offset1);
-
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 0.5 * offset2);
-        accumulatedOcclusion += sampleOcclusion(occludee, gbufferOccluder_WorldPosition, gbufferUV + 1.0 * offset2);
     }
 
-    return clamp(accumulatedOcclusion / (4.0 * 4.0 * 6.28318530718), 0.0, 1.0);
+    return clamp(accumulatedOcclusion / (4.0 * 4.0 * sampleCount * 6.28318530718), 0.0, 1.0);
 }
 
 void main()
