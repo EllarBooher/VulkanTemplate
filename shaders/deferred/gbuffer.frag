@@ -69,6 +69,11 @@ void main()
 #if WITH_TEXTURES == 1
     vec4 sampledColor = texture(color, inTexCoord);
 
+    if (sampledColor.a * inColor.a < 0.99)
+    {
+        discard;
+    }
+
     outDiffuseColor = vec4(inColor.rgb * sampledColor.rgb, 1.0);
     outSpecularColor = vec4(inColor.rgb * sampledColor.rgb, 1.0);
 
