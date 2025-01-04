@@ -3,9 +3,18 @@
 #include "vulkan_template/app/DescriptorAllocator.hpp"
 #include "vulkan_template/core/Log.hpp"
 #include "vulkan_template/vulkan/Image.hpp"
+#include "vulkan_template/vulkan/Immediate.hpp"
 #include "vulkan_template/vulkan/VulkanMacros.hpp"
 #include "vulkan_template/vulkan/VulkanStructs.hpp"
 #include <array>
+#include <chrono>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <glm/common.hpp>
+#include <glm/exponential.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vector_relational.hpp>
 #include <imgui.h>
 #include <span>
 #include <utility>
@@ -75,9 +84,9 @@ auto RenderTarget::create(
         ));
 
     VkImageUsageFlags const colorUsage{
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-        | VK_IMAGE_USAGE_SAMPLED_BIT // used as descriptor for e.g. ImGui
-        | VK_IMAGE_USAGE_STORAGE_BIT // used in compute passes
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT // screenshotting (and other uses)
+        | VK_IMAGE_USAGE_SAMPLED_BIT    // used as descriptor for e.g. ImGui
+        | VK_IMAGE_USAGE_STORAGE_BIT    // used in compute passes
         | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT // used in graphics passes
         | VK_IMAGE_USAGE_TRANSFER_DST_BIT     // copy into
     };
@@ -341,6 +350,194 @@ auto RenderTarget::combinedDescriptorLayout() const -> VkDescriptorSetLayout
 void RenderTarget::setSize(VkRect2D const size) { m_size = size; }
 
 auto RenderTarget::size() const -> VkRect2D { return m_size; }
+} // namespace vkt
+
+namespace
+{
+struct Texel_R16G16B16A16_UNORM
+{
+    uint16_t r;
+    uint16_t g;
+    uint16_t b;
+    uint16_t a;
+};
+
+auto toNonlinear(glm::vec3 const linear) -> glm::vec3
+{
+    // Transfer implementation as defined in
+    // https://www.color.org/chardata/rgb/srgb.xalter
+
+    glm::bvec3 const cutoff = glm::lessThanEqual(linear, glm::vec3(0.0031308));
+    glm::vec3 const lower = glm::vec3(12.92) * linear;
+    glm::vec3 const higher =
+        glm::pow(linear, glm::vec3(1 / 2.4)) * glm::vec3(1.055)
+        - glm::vec3(0.055);
+
+    return glm::mix(higher, lower, cutoff);
+}
+auto toNonlinear(glm::u16vec3 const linear) -> glm::u16vec3
+{
+    glm::vec3 const componentMax{
+        static_cast<float>(std::numeric_limits<glm::u16vec3::value_type>::max())
+    };
+
+    glm::vec3 const linearRGB{glm::vec3{linear} / componentMax};
+    glm::vec3 const nonlinearRGB{toNonlinear(linearRGB)};
+    return glm::u16vec3{nonlinearRGB * componentMax};
+}
+
+} // namespace
+
+namespace vkt
+{
+void RenderTarget::saveToDisk(
+    VkDevice const device,
+    VmaAllocator const allocator,
+    ImmediateSubmissionQueue& copyQueue
+)
+{
+    // Deal with other formats later
+    assert(
+        color().image().allocationParameters().format
+        == VK_FORMAT_R16G16B16A16_UNORM
+    );
+
+    std::optional<Image> destinationResult{Image::allocate(
+        device,
+        allocator,
+        ImageAllocationParameters{
+            .extent = size().extent,
+            .format = color().image().allocationParameters().format,
+            .usageFlags = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .tiling = VK_IMAGE_TILING_LINEAR,
+            .vmaUsage = VMA_MEMORY_USAGE_AUTO,
+            .vmaFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT
+                      | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+        }
+    )};
+    if (!destinationResult.has_value())
+    {
+        VKT_ERROR("Failed to allocate screenshot destination.");
+        return;
+    }
+    vkt::Image& destination{destinationResult.value()};
+
+    if (copyQueue.immediateSubmit(
+            [&](VkCommandBuffer const cmd)
+    {
+        color().recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        );
+        destination.recordTransitionBarriered(
+            cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
+        );
+
+        // Need to copy more than just color to support other formats
+        // This assumes the format support blit
+        Image::recordCopyRect(
+            cmd,
+            color().image(),
+            destination,
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            size(),
+            {.extent = destination.extent2D()}
+        );
+    }
+        )
+        != ImmediateSubmissionQueue::SubmissionResult::SUCCESS)
+    {
+        VKT_ERROR("Failed to submit image copy/blit commands for screenshot "
+                  "operation.");
+        return;
+    };
+
+    std::optional<VmaAllocationInfo> allocInfo{destination.fetchAllocationInfo()
+    };
+    if (!allocInfo.has_value())
+    {
+        VKT_ERROR("Unable to fetch memory allocation info for screenshot "
+                  "destination image.");
+        return;
+    }
+
+    VkImageSubresource subResource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
+    VkSubresourceLayout subResourceLayout;
+    vkGetImageSubresourceLayout(
+        device, destination.image(), &subResource, &subResourceLayout
+    );
+
+    auto const* data{
+        reinterpret_cast<uint8_t const*>(allocInfo.value().pMappedData)
+    };
+    assert(
+        allocInfo.value().size
+        >= destination.extent2D().width * destination.extent2D().height
+    );
+
+    auto const now{std::chrono::system_clock::now()};
+    std::filesystem::path const screenshotDir{std::filesystem::weakly_canonical(
+        std::filesystem::current_path() / "screenshots/"
+    )};
+    if (!std::filesystem::exists(screenshotDir))
+    {
+        VKT_INFO(
+            "Screenshots directory not found, creating at '{}'",
+            screenshotDir.string()
+        );
+        std::filesystem::create_directory(screenshotDir);
+    }
+
+    char const* screenshotExtension{".ppm"};
+
+    std::string const screenshotFilenameSansSuffix{
+        std::format("screenshot_{:%d_%m_%Y_%H_%M_%OS}", now)
+    };
+    std::string screenshotFilename{screenshotFilenameSansSuffix};
+    size_t suffix{0};
+    while (std::filesystem::exists(
+        screenshotDir / (screenshotFilename + screenshotExtension)
+    ))
+    {
+        screenshotFilename = {
+            screenshotFilenameSansSuffix + std::format("_{}", suffix)
+        };
+        suffix++;
+    }
+
+    std::filesystem::path const fullScreenshotPath{
+        screenshotDir / (screenshotFilename + screenshotExtension)
+    };
+    std::ofstream file{fullScreenshotPath};
+
+    file << "P3\n";
+    file << destination.extent2D().width << " # width \n";
+    file << destination.extent2D().height << " # height \n";
+    file << "65535 # 16 bit depth \n";
+
+    for (size_t y{0}; y < destination.extent2D().height; y++)
+    {
+        std::span<Texel_R16G16B16A16_UNORM const> const rowTexels{
+            reinterpret_cast<Texel_R16G16B16A16_UNORM const*>(data),
+            destination.extent2D().width
+        };
+        for (auto const& texel : rowTexels)
+        {
+            glm::u16vec3 const srgbEncoded{
+                toNonlinear(glm::u16vec3{texel.r, texel.g, texel.b})
+            };
+
+            file << std::format(
+                "{} {} {} ", srgbEncoded.r, srgbEncoded.g, srgbEncoded.b
+            );
+        }
+        file << "\n";
+        data += subResourceLayout.rowPitch;
+    }
+
+    file.close();
+
+    VKT_INFO("Screenshot saved as '{}'", fullScreenshotPath.string());
+}
 
 void RenderTarget::destroy() noexcept
 {

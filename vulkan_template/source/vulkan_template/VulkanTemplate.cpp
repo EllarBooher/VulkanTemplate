@@ -318,6 +318,7 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
     }
     VkCommandBuffer const cmd{frameBuffer.currentFrame().mainCommandBuffer};
 
+    bool screenshot{false};
     {
         vkt::DockingLayout const& dockingLayout{uiLayer.begin()};
 
@@ -326,6 +327,7 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
             "Post-Process Linear to sRGB",
             config.postProcessLinearToSRGB
         );
+        screenshot = uiLayer.HUDMenuItem("Display", "Screenshot Scene");
 
         std::optional<vkt::SceneViewport> sceneViewport{uiLayer.sceneViewport()
         };
@@ -400,6 +402,15 @@ auto mainLoop(Resources& resources, Config& config) -> LoopResult
             );
             return LoopResult::FATAL_ERROR;
         }
+    }
+
+    if (screenshot)
+    {
+        uiLayer.sceneTexture().saveToDisk(
+            graphicsContext.device(),
+            graphicsContext.allocator(),
+            resources.submissionQueue
+        );
     }
 
     return LoopResult::CONTINUE;

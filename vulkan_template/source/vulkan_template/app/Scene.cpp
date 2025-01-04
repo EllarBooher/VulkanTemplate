@@ -949,6 +949,8 @@ void Scene::controlsWindow(std::optional<ImGuiID> const dockNode)
         return;
     }
 
+    ImGui::SeparatorText("Camera");
+
     PropertySliderBehavior constexpr POSITION_BEHAVIOR{.speed = 0.1F};
     PropertySliderBehavior const AXIS_ANGLES_BEHAVIOR{
         .bounds = FloatBounds{.min = -glm::pi<float>(), .max = glm::pi<float>()}

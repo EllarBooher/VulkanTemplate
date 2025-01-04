@@ -103,7 +103,7 @@ public:
 
     // TODO: remove this once able to, to encapsulate scene texture and defer
     // exposing it until rendering time
-    [[nodiscard]] auto sceneTexture() -> RenderTarget const&;
+    [[nodiscard]] auto sceneTexture() -> RenderTarget&;
 
     void end();
 

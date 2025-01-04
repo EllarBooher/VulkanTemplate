@@ -740,7 +740,7 @@ auto UILayer::sceneViewport(bool const forceFocus)
     };
 }
 
-auto UILayer::sceneTexture() -> RenderTarget const& { return *m_sceneTexture; }
+auto UILayer::sceneTexture() -> RenderTarget& { return *m_sceneTexture; }
 
 void UILayer::end()
 {

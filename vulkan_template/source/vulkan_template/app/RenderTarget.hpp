@@ -58,6 +58,9 @@ struct RenderTarget
     void setSize(VkRect2D);
     [[nodiscard]] auto size() const -> VkRect2D;
 
+    void
+    saveToDisk(VkDevice, VmaAllocator, ImmediateSubmissionQueue& copyQueue);
+
 private:
     RenderTarget() = default;
 
