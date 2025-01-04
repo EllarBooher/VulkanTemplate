@@ -97,7 +97,6 @@ vec3 specularBRDF(const PBRTexel material, const vec3 lightOutgoing, const vec3 
     const float normalizationTerm = (specularPower + 2) / 8.0;
 
     return vec3(normalizationTerm * microfacetDistribution);
-    //return vec3(100.0 * clamp(dot(lightOutgoing, material.normal), 0.0, 1.0));
 }
 
 layout(push_constant) uniform PushConstant
