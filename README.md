@@ -26,9 +26,9 @@ This ended up being a bit of wasted effort, as compared to just returning some c
 
 The occluder sampling strategy is N disks of 16 samples, where N varies in a set interval based on the distance from the camera. These 16 samples are distributed in a zig-zag pattern among the four quadrants of screen-space disk. This is combined with random rotations, achieved by reflecting over samples from a precomputed texture of random normals. The reflection vectors are NOT normalized, which I found to be best. When you normalize these reflection vectors, it turns the reflection into just a rotation. This leads to clear banding artifacts. Similarly, not reflecting/randomizing the samples leads to sampling artifacts where the sampling strategy is obvious. See this comparison, with the AO cranked up to make the effect more obvious:
 
-<img src="./screenshots/sampling_deterministic.png" width="300"> | <img src="./screenshots/sampling_normalized.png" width="300">| <img src="./screenshots/sampling.png" width="300">
-|:-:|:-:|:-:|
-|No sampling randomization |Sample offsets reflected over random unit vectors|Sample offsets reflected over random non-unit vectors
+![](./screenshots/sampling.png)| 
+|:-:|
+|From left to right: 1) No sampling randomization, 2) sample offsets reflected over random unit vectors, and 3) sample offsets reflected over random non-unit vectors.
 
 The front-face GBuffer and AO texture are then combined in a deferred lighting pass within [shaders/deferred/light.comp](./shaders/deferred/light.comp). Here I utilized PCF shadowmapping for a directional light that contrasts the ambient occlusion. The ambient occlusion is sampled as a transmittance value that attenuates just the ambient lighting contribution. The final result is pictured below with the [Sponza](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) model. The directional light is nominally a hundred times brighter than the ambient lighting.
 
@@ -44,9 +44,9 @@ In the end, the effect is nice, but suffers from many issues. Some points:
 - I implemented a gaussian blur on the AO texture to help cover some of the noise, but I ran into the issues with clobbering object boundaries with large depth discontinuities, so the screenshots above have blurring disabled.
 - The random sampling noise pattern is quite visible. This does not have anything to do with SSAO, the sample randomization just needs to be tweaked to be based on world position instead of gbuffer texture coordinate like it is now.
 
-There are many techniques that build on SSAO, and address all of the issues I ran into, such as GTAO (see [Jimenez et al. at Siggraph 2016](https://www.activision.com/cdn/research/Practical_Real_Time_Strategies_for_Accurate_Indirect_Occlusion_NEW%20VERSION_COLOR.pdf)). 
+There are many techniques that build on SSAO and address most of the issues I encountered, such as GTAO (see [Jimenez et al. at Siggraph 2016](https://www.activision.com/cdn/research/Practical_Real_Time_Strategies_for_Accurate_Indirect_Occlusion_NEW%20VERSION_COLOR.pdf)). 
 
-The cpp sources containing the implementation of this pipeline are in [vulkan_template/app/GBuffer.cpp](vulkan_template/app/GBuffer.cpp) and [vulkan_template/app/LightingPass.cpp](vulkan_template/app/LightingPass.cpp). The rest of the projects code is auxiliary and based on the `main` branch.
+The C++ sources containing the implementation of this pipeline are in [vulkan_template/app/GBuffer.cpp](vulkan_template/app/GBuffer.cpp) and [vulkan_template/app/LightingPass.cpp](vulkan_template/app/LightingPass.cpp). The rest of the project's code is auxiliary and based on the `main` branch.
 
 ## Sources
 
