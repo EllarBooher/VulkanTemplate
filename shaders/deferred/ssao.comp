@@ -159,7 +159,10 @@ float computeAmbientOcclusionAttenuation(GBufferTexel occludee, vec2 gbufferUV, 
         }
     }
 
-    return clamp(accumulatedOcclusion / (4.0 * 4.0 * sampleCount * 6.28318530718), 0.0, 1.0);
+    // Accumulated occlusion is a solid angle
+    // We took 4 * 4 * sampleCount total individual samples, but each sample disk samples in 8 directions, so conceivably
+    // we only need to average the 2 samples in each direction. Thus we divide by 2 * sampleCount instead.
+    return clamp(accumulatedOcclusion / (2.0 * sampleCount * 6.28318530718), 0.0, 1.0);
 }
 
 void main()

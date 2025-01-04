@@ -1121,9 +1121,9 @@ LightingPassParameters LightingPass::DEFAULT_PARAMETERS{
     .aoSampleCountBounds = {6.0F, 2.0F},
     .aoSampleCountNearFar = {0.1, 100.0},
 
-    .occluderRadius = 1.0F,
+    .occluderRadius = 0.25F,
     .occluderBias = 0.05F,
-    .aoScale = 0.2F,
+    .aoScale = 0.4F,
 
     .blurAOTexture = true,
 
