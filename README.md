@@ -1,8 +1,8 @@
 # SSAO
 
-This method starts with generating a GBuffer in [shaders/deferred/gbuffer.frag](./shaders/deferred/gbuffer.vert) and [shaders/deferred/gbuffer.frag](./shaders/deferred/gbuffer.frag) as one would for a basic deferred-lighting renderer. This GBuffer contains color, world position, and normals for the scene. Only opaque geometry is rendered, with one pass for front-face and back-face culling each. 
+This method starts with generating a GBuffer in [shaders/deferred/gbuffer.frag](./shaders/deferred/gbuffer.vert) and [shaders/deferred/gbuffer.frag](./shaders/deferred/gbuffer.frag). This GBuffer contains color, world position, and normals for the scene. Only opaque geometry is rendered, with one pass for front-face and back-face culling each. 
 
-Then, these gbuffers are passed to two full-screen dispatches of [shaders/deferred/ssao.comp](./shaders/deferred/ssao.comp). One dispatch handles computing the occlusion from the front-face, and the other the occlusion from the back-face. These are written into the same AO texture, where the transmittances are summed as attenuations and clamped to be between 0 and 1. This permits a saturation of ambient occlusion due to overcounting between front-faces and back-faces, but I assumed this was unlikely for most geometry. This does lead to some issues wherever occluding front-faces and back-faces are close together, such as behind a rounded pillar. The worst case scenario is a two-sided polygon, for which both faces produce identical occluders.
+Then, these gbuffers are passed to two full-screen dispatches of [shaders/deferred/ssao.comp](./shaders/deferred/ssao.comp). One dispatch handles computing the occlusion from the front-faces, and the other the occlusion from the back-faces. These are written into the same AO texture, where the transmittances are summed as attenuations and clamped to be between 0 and 1. This permits a saturation of ambient occlusion due to overcounting between front-face and back-face occluders, but I assumed this was unlikely for most geometry. This does lead to some issues wherever occluding front-faces and back-faces are close together, such as behind a rounded pillar. The worst case scenario is a two-sided polygon, for which both faces produce identical occluders.
 
 I decided to model my occluders as a sphere subtending a certain solid angle, blocking a uniform distribution of ambient light hitting the occludee. Here is an extracted snippet of the important parts of how the contribution of a single occludee sample is calculated:
 
@@ -26,9 +26,9 @@ This ended up being a bit of wasted effort, as compared to just returning some c
 
 The occluder sampling strategy is N disks of 16 samples, where N varies in a set interval based on the distance from the camera. These 16 samples are distributed in a zig-zag pattern among the four quadrants of a screen-space disk. This is combined with random rotations, achieved by reflecting over samples from a precomputed texture of random normals. The reflection vectors are NOT normalized, which I found to be best. When you normalize these reflection vectors, it turns the reflection into just a rotation. This leads to clear banding artifacts. Similarly, not reflecting/randomizing the samples leads to sampling artifacts where the sampling strategy is obvious. See this comparison, with the AO cranked up to make the effect more obvious:
 
-![](./screenshots/sampling.png)| 
+|![](./screenshots/sampling.png)|
 |:-:|
-|From left to right: 1) No sampling randomization, 2) sample offsets reflected over random unit vectors, and 3) sample offsets reflected over random non-unit vectors.
+|From left to right: 1) No sampling randomization, 2) sample offsets reflected over random unit vectors, and 3) sample offsets reflected over random non-unit vectors.|
 
 The front-face GBuffer and AO texture are then combined in a deferred lighting pass within [shaders/deferred/light.comp](./shaders/deferred/light.comp). Here I utilized PCF shadowmapping for a directional light that contrasts the ambient occlusion. The ambient occlusion is sampled as a transmittance value that attenuates just the ambient lighting contribution. The final result is pictured below with the [Sponza](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) model. The directional light is nominally a hundred times brighter than the ambient lighting.
 
@@ -46,7 +46,7 @@ In the end, the effect is nice, but suffers from many issues. Some points:
 
 There are many techniques that build on SSAO and address most of the issues I encountered, such as GTAO (see [Jimenez et al. at Siggraph 2016](https://www.activision.com/cdn/research/Practical_Real_Time_Strategies_for_Accurate_Indirect_Occlusion_NEW%20VERSION_COLOR.pdf)). 
 
-The C++ sources containing the implementation of this pipeline are in [vulkan_template/app/GBuffer.cpp](vulkan_template/app/GBuffer.cpp) and [vulkan_template/app/LightingPass.cpp](vulkan_template/app/LightingPass.cpp). The rest of the project's code is auxiliary and based on the `main` branch.
+The C++ sources containing the implementation of this pipeline are in [GBuffer.cpp](vulkan_template/source/vulkan_template/app/GBuffer.cpp) and [LightingPass.cpp](vulkan_template/source/vulkan_template/app/LightingPass.cpp). The rest of the project's code is auxiliary and based on the `main` branch.
 
 ## Sources
 
