@@ -26,7 +26,7 @@ This ended up being a bit of wasted effort, as compared to just returning some c
 
 The occluder sampling strategy is N disks of 16 samples, where N varies in a set interval based on the distance from the camera. These 16 samples are distributed in a zig-zag pattern among the four quadrants of a screen-space disk. This is combined with random rotations, achieved by reflecting over samples from a precomputed texture of random normals. The reflection vectors are NOT normalized, which I found to be best. When you normalize these reflection vectors, it turns the reflection into just a rotation. This leads to clear banding artifacts. Similarly, not reflecting/randomizing the samples leads to sampling artifacts where the sampling strategy is obvious. See this comparison, with the AO cranked up to make the effect more obvious:
 
-|![](./screenshots/sampling.png)|
+|![](./screenshots/sampling_comparison.png)|
 |:-:|
 |From left to right: 1) No sampling randomization, 2) sample offsets reflected over random unit vectors, and 3) sample offsets reflected over random non-unit vectors.|
 
