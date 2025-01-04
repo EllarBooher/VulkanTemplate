@@ -4,7 +4,7 @@ This method starts with generating a GBuffer in [shaders/deferred/gbuffer.frag](
 
 Then, these gbuffers are passed to two full-screen dispatches of [shaders/deferred/ssao.comp](./shaders/deferred/ssao.comp). One dispatch handles computing the occlusion from the front-face, and the other the occlusion from the back-face. These are written into the same AO texture, where the transmittances are summed as attenuations and clamped to be between 0 and 1. This permits a saturation of ambient occlusion due to overcounting between front-faces and back-faces, but I assumed this was unlikely for most geometry. This does lead to some issues wherever occluding front-faces and back-faces are close together, such as behind a rounded pillar. The worst case scenario is a two-sided polygon, for which both faces produce identical occluders.
 
-I decided to model my occluders as a sphere subtending a certain solid angle, blocking a uniform distribution of ambient light hitting the occludee. Here is an extracted snippet of the important parts:
+I decided to model my occluders as a sphere subtending a certain solid angle, blocking a uniform distribution of ambient light hitting the occludee. Here is an extracted snippet of the important parts of how the contribution of a single occludee sample is calculated:
 
 ```
 <shaders/deferred/ssao.comp>
@@ -24,7 +24,7 @@ I decided to model my occluders as a sphere subtending a certain solid angle, bl
 
 This ended up being a bit of wasted effort, as compared to just returning some choice of `1.0/d`, `1.0/(d * d)`, `1.0/(1.0 + d)` etc. The idea of modelling an individual occluder in a physically-based manner is nice, but at high sample counts you still over-accumulate occlusion. As expected for a screen-space effect, this forced me to average the samples and add various knobs to tweak the effect and get it to a visibly appealing state, undermining the physically-based intent.
 
-The occluder sampling strategy is N disks of 16 samples, where N varies in a set interval based on the distance from the camera. These 16 samples are distributed in a zig-zag pattern among the four quadrants of screen-space disk. This is combined with random rotations, achieved by reflecting over samples from a precomputed texture of random normals. The reflection vectors are NOT normalized, which I found to be best. When you normalize these reflection vectors, it turns the reflection into just a rotation. This leads to clear banding artifacts. Similarly, not reflecting/randomizing the samples leads to sampling artifacts where the sampling strategy is obvious. See this comparison, with the AO cranked up to make the effect more obvious:
+The occluder sampling strategy is N disks of 16 samples, where N varies in a set interval based on the distance from the camera. These 16 samples are distributed in a zig-zag pattern among the four quadrants of a screen-space disk. This is combined with random rotations, achieved by reflecting over samples from a precomputed texture of random normals. The reflection vectors are NOT normalized, which I found to be best. When you normalize these reflection vectors, it turns the reflection into just a rotation. This leads to clear banding artifacts. Similarly, not reflecting/randomizing the samples leads to sampling artifacts where the sampling strategy is obvious. See this comparison, with the AO cranked up to make the effect more obvious:
 
 ![](./screenshots/sampling.png)| 
 |:-:|
